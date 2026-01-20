@@ -1,0 +1,203 @@
+name: Scrape Anime Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scrape mode'
+        required: true
+        default: 'update'
+        type: choice
+        options:
+          - full
+          - update
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  # ============================================================================
+  # PARALLEL SCRAPING JOBS
+  # ============================================================================
+  scrape-anidb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-anidb-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      
+      - name: Scrape AniDB
+        run: python scripts/run_anime_scraper.py --service anidb
+      
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-anidb-anime
+          path: scraped-data/anime/anidb-anime.json
+          retention-days: 7
+      
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-anidb-anime
+          path: checkpoints/anime/anidb-checkpoint.json
+          retention-days: 90
+
+  scrape-anilist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-anilist-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape AniList
+        run: python scripts/run_anime_scraper.py --service anilist
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-anilist-anime
+          path: scraped-data/anime/anilist-anime.json
+          retention-days: 7
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-anilist-anime
+          path: checkpoints/anime/anilist-checkpoint.json
+          retention-days: 90
+
+  scrape-mal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-mal-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape MyAnimeList
+        run: python scripts/run_anime_scraper.py --service myanimelist
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mal-anime
+          path: scraped-data/anime/myanimelist-anime.json
+          retention-days: 7
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-mal-anime
+          path: checkpoints/anime/myanimelist-checkpoint.json
+          retention-days: 90
+
+  scrape-kitsu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-kitsu-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape Kitsu
+        run: python scripts/run_anime_scraper.py --service kitsu
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-kitsu-anime
+          path: scraped-data/anime/kitsu-anime.json
+          retention-days: 7
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-kitsu-anime
+          path: checkpoints/anime/kitsu-checkpoint.json
+          retention-days: 90
+
+  # Add similar jobs for: animenewsnetwork, animeplanet, livechart, simkl, themoviedb, tvdb, imdb
+
+  # ============================================================================
+  # MAPPING JOB (runs after all scrapers complete)
+  # ============================================================================
+  map-anime:
+    needs: [scrape-anidb, scrape-anilist, scrape-mal, scrape-kitsu]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download all scraped data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: data-*-anime
+          path: artifacts/
+          merge-multiple: true
+      
+      - name: Move artifacts to correct location
+        run: |
+          mkdir -p scraped-data/anime
+          find artifacts -name "*.json" -exec mv {} scraped-data/anime/ \;
+      
+      - name: Run anime mapper
+        run: python scripts/run_mapper.py --type anime
+      
+      - name: Commit and push mapped data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add mapped-data/anime-list-full-mapped.json
+          git diff --quiet && git diff --staged --quiet || \
+            (git commit -m "Update anime mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+      
+      - name: Generate summary
+        run: |
+          echo "# Anime Mapping Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "mapped-data/anime-list-full-mapped.json" ]; then
+            TOTAL=$(jq length mapped-data/anime-list-full-mapped.json)
+            echo "**Total Entries:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          fi
