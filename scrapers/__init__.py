@@ -53,7 +53,7 @@ from .myanimelist_scraper import MyAnimeListMangaScraper
 from .kitsu_scraper import KitsuMangaScraper
 
 __all__ = [
-    'AniListAnimeScraper',
-    'MyAnimeListAnimeScraper',
-    'KitsuAnimeScraper'
+    'AniListMangaScraper',
+    'MyAnimeListMangaScraper',
+    'KitsuMangaScraper'
 ]
