@@ -1,10 +1,16 @@
 """
 Anime mapper - merges all service data using AniDB as base ID
+File: mappers/anime_mapper.py
 """
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
+import sys
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from utils.file_utils import load_json, save_json
 
 class AnimeMapper:
@@ -93,7 +99,7 @@ class AnimeMapper:
         """Build complete cross-reference map by connecting related IDs"""
         print("Step 2: Building cross-references...")
         
-        # Find all connected ID clusters
+        # Find all connected ID clusters using BFS
         visited = set()
         clusters = []
         
@@ -146,7 +152,7 @@ class AnimeMapper:
                 primary_key = f"anidb:{ids['anidb']}"
             else:
                 # Fallback to first available ID
-                for svc in ['anilist', 'mal', 'kitsu']:
+                for svc in ['anilist', 'mal', 'kitsu', 'simkl']:
                     if svc in ids:
                         primary_key = f"{svc}:{ids[svc]}"
                         break
@@ -209,7 +215,7 @@ class AnimeMapper:
     def get_type_from_sources(self, id_map: Dict[str, str]) -> Optional[str]:
         """Get anime type from available sources"""
         # Priority: AniList > MAL > others
-        for service in ['anilist', 'mal', 'myanimelist']:
+        for service in ['anilist', 'mal', 'myanimelist', 'kitsu']:
             if service in id_map:
                 key = (service, id_map[service])
                 if key in self.all_data:
@@ -230,7 +236,7 @@ class AnimeMapper:
                 
                 # TVDB season
                 tvdb_season = metadata.get('default_tvdb_season')
-                if tvdb_season and tvdb_season not in ['a', '0', 'movie', 'ova']:
+                if tvdb_season and tvdb_season not in ['a', '0', 'movie', 'ova', '']:
                     try:
                         season['tvdb'] = int(tvdb_season)
                     except (ValueError, TypeError):
@@ -238,7 +244,7 @@ class AnimeMapper:
                 
                 # TMDB season
                 tmdb_season = metadata.get('tmdb_season')
-                if tmdb_season and tmdb_season not in ['a', '0']:
+                if tmdb_season and tmdb_season not in ['a', '0', '']:
                     try:
                         season['tmdb'] = int(tmdb_season)
                     except (ValueError, TypeError):
@@ -249,7 +255,7 @@ class AnimeMapper:
     def normalize_service_name(self, service: str) -> str:
         """Normalize service names"""
         mapping = {
-            'themoviedb': 'tmdb',
+            'themoviedb': 'themoviedb',
             'thetvdb': 'tvdb',
             'anime-planet': 'animeplanet',
             'myanimelist': 'mal'
