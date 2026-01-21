@@ -1,21 +1,34 @@
 """
 Base scraper class with common functionality
+File: scrapers/base_scraper.py
 """
 import json
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
-from utils.http_utils import RateLimitedSession
-from utils.file_utils import save_json, load_json
 
 class BaseScraper(ABC):
     """Base class for all service scrapers"""
     
     def __init__(self, service_name: str, media_type: str):
+        """
+        Initialize base scraper
+        
+        Args:
+            service_name: Name of the service (e.g., 'anilist', 'mal')
+            media_type: Type of media ('anime' or 'manga')
+        """
         self.service_name = service_name
         self.media_type = media_type
+        
+        # Import here to avoid circular imports
+        from utils.http_utils import RateLimitedSession
+        from utils.file_utils import load_json, save_json
+        
         self.session = RateLimitedSession(self.get_rate_limit())
+        self._load_json = load_json
+        self._save_json = save_json
         
         # Setup paths
         self.output_dir = Path(f"scraped-data/{media_type}")
@@ -40,37 +53,83 @@ class BaseScraper(ABC):
     
     @abstractmethod
     def get_rate_limit(self) -> float:
-        """Return rate limit in seconds between requests"""
+        """
+        Return rate limit in seconds between requests
+        
+        Returns:
+            float: Seconds to wait between requests
+        """
         pass
     
     @abstractmethod
     def scrape(self) -> List[Dict[str, Any]]:
-        """Main scraping logic - must be implemented by each scraper"""
+        """
+        Main scraping logic - must be implemented by each scraper
+        
+        Returns:
+            List of scraped items in standardized format
+        """
         pass
     
     @abstractmethod
     def extract_external_ids(self, item: Dict[str, Any]) -> Dict[str, str]:
-        """Extract external service IDs from item data"""
+        """
+        Extract external service IDs from item data
+        
+        Args:
+            item: Raw item data from service
+            
+        Returns:
+            Dictionary mapping service names to IDs
+        """
         pass
     
     def load_checkpoint(self) -> Dict[str, Any]:
-        """Load scraping checkpoint"""
+        """
+        Load scraping checkpoint
+        
+        Returns:
+            Checkpoint data dictionary
+        """
         if self.checkpoint_file.exists():
-            return load_json(self.checkpoint_file)
-        return {"last_id": 0, "page": 1, "offset": 0}
+            return self._load_json(self.checkpoint_file)
+        return {
+            "last_id": 0,
+            "page": 1,
+            "offset": 0,
+            "last_updated": None
+        }
     
     def save_checkpoint(self, data: Dict[str, Any]):
-        """Save scraping checkpoint"""
-        save_json(self.checkpoint_file, data)
+        """
+        Save scraping checkpoint
+        
+        Args:
+            data: Checkpoint data to save
+        """
+        data["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self._save_json(self.checkpoint_file, data)
     
     def save_results(self):
         """Save scraped results to file"""
-        save_json(self.output_file, self.results)
+        self._save_json(self.output_file, self.results)
         print(f"\n✓ Saved {len(self.results)} items to {self.output_file}")
     
     def format_item(self, item_id: str, title: str, item_type: str, 
                    external_ids: Dict[str, str], metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Format item in standardized structure"""
+        """
+        Format item in standardized structure
+        
+        Args:
+            item_id: Primary ID for this service
+            title: Title of the item
+            item_type: Type (TV, Movie, OVA, etc.)
+            external_ids: Dictionary of external service IDs
+            metadata: Additional metadata from service
+            
+        Returns:
+            Standardized item dictionary
+        """
         return {
             "id": str(item_id),
             "title": title,
@@ -83,12 +142,28 @@ class BaseScraper(ABC):
         """Execute the scraping process"""
         try:
             print(f"Starting scrape for {self.service_name}...")
+            start_time = time.time()
+            
             self.results = self.scrape()
             self.save_results()
+            
+            elapsed = time.time() - start_time
             print(f"\n{'='*70}")
             print(f"{self.service_name.upper()} scraping complete!")
             print(f"Total items: {len(self.results)}")
+            print(f"Time elapsed: {elapsed:.2f} seconds")
             print(f"{'='*70}\n")
+            
+        except KeyboardInterrupt:
+            print(f"\n\n[!] Scraping interrupted by user")
+            print(f"Saving {len(self.results)} items collected so far...")
+            if self.results:
+                self.save_results()
+            raise
+            
         except Exception as e:
             print(f"\n[ERROR] Scraping failed: {e}")
+            print(f"Saving {len(self.results)} items collected before error...")
+            if self.results:
+                self.save_results()
             raise
