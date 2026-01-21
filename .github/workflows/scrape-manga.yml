@@ -1,0 +1,193 @@
+name: Scrape Manga Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scrape mode'
+        required: true
+        default: 'update'
+        type: choice
+        options:
+          - full
+          - update
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 3 AM UTC
+
+jobs:
+  # ============================================================================
+  # PARALLEL SCRAPING JOBS
+  # ============================================================================
+  
+  scrape-anilist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-anilist-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      
+      - name: Scrape AniList Manga
+        run: python scripts/run_manga_scraper.py --service anilist
+      
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-anilist-manga
+          path: scraped-data/manga/anilist-manga.json
+          retention-days: 7
+      
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-anilist-manga
+          path: checkpoints/manga/anilist-checkpoint.json
+          retention-days: 90
+
+  scrape-mal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-mal-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      
+      - name: Scrape MyAnimeList Manga
+        run: python scripts/run_manga_scraper.py --service myanimelist
+      
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mal-manga
+          path: scraped-data/manga/myanimelist-manga.json
+          retention-days: 7
+      
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-mal-manga
+          path: checkpoints/manga/myanimelist-checkpoint.json
+          retention-days: 90
+
+  scrape-kitsu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-kitsu-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      
+      - name: Scrape Kitsu Manga
+        run: python scripts/run_manga_scraper.py --service kitsu
+      
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-kitsu-manga
+          path: scraped-data/manga/kitsu-manga.json
+          retention-days: 7
+      
+      - name: Upload checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-kitsu-manga
+          path: checkpoints/manga/kitsu-checkpoint.json
+          retention-days: 90
+
+  # ============================================================================
+  # MAPPING JOB (runs after all scrapers complete)
+  # ============================================================================
+  
+  map-manga:
+    needs: [scrape-anilist, scrape-mal, scrape-kitsu]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download all scraped data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: data-*-manga
+          path: artifacts/
+      
+      - name: Move artifacts to correct location
+        run: |
+          mkdir -p scraped-data/manga
+          find artifacts -name "*.json" -exec cp {} scraped-data/manga/ \;
+          ls -la scraped-data/manga/
+      
+      - name: Run manga mapper
+        run: python scripts/run_mapper.py --type manga
+      
+      - name: Commit and push mapped data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add mapped-data/manga-list-full-mapped.json
+          git diff --quiet && git diff --staged --quiet || \
+            (git commit -m "Update manga mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+      
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "# Manga Mapping Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "mapped-data/manga-list-full-mapped.json" ]; then
+            TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/manga-list-full-mapped.json'))))")
+            echo "**Total Entries:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## File Size" >> $GITHUB_STEP_SUMMARY
+            du -h mapped-data/manga-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
+          fi
