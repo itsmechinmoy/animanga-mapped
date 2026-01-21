@@ -1,4 +1,4 @@
-name: Scrape Anime Data
+name: Scrape Anime Data (All Services)
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
 
 jobs:
   # ============================================================================
-  # PARALLEL SCRAPING JOBS
+  # PARALLEL SCRAPING JOBS - ALL 11 SERVICES
   # ============================================================================
   
   scrape-anidb:
@@ -24,34 +24,22 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Download checkpoint
-        uses: actions/download-artifact@v4
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
         with:
           name: checkpoint-anidb-anime
           path: checkpoints/anime/
         continue-on-error: true
-      
-      - name: Scrape AniDB
-        run: python scripts/run_anime_scraper.py --service anidb
-      
-      - name: Upload scraped data
-        uses: actions/upload-artifact@v4
+      - run: python scripts/run_anime_scraper.py --service anidb
+      - uses: actions/upload-artifact@v4
         with:
           name: data-anidb-anime
           path: scraped-data/anime/anidb-anime.json
           retention-days: 7
-      
-      - name: Upload checkpoint
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: checkpoint-anidb-anime
           path: checkpoints/anime/anidb-checkpoint.json
@@ -62,34 +50,22 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Download checkpoint
-        uses: actions/download-artifact@v4
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
         with:
           name: checkpoint-anilist-anime
           path: checkpoints/anime/
         continue-on-error: true
-      
-      - name: Scrape AniList
-        run: python scripts/run_anime_scraper.py --service anilist
-      
-      - name: Upload scraped data
-        uses: actions/upload-artifact@v4
+      - run: python scripts/run_anime_scraper.py --service anilist
+      - uses: actions/upload-artifact@v4
         with:
           name: data-anilist-anime
           path: scraped-data/anime/anilist-anime.json
           retention-days: 7
-      
-      - name: Upload checkpoint
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: checkpoint-anilist-anime
           path: checkpoints/anime/anilist-checkpoint.json
@@ -100,34 +76,22 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Download checkpoint
-        uses: actions/download-artifact@v4
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
         with:
           name: checkpoint-mal-anime
           path: checkpoints/anime/
         continue-on-error: true
-      
-      - name: Scrape MyAnimeList
-        run: python scripts/run_anime_scraper.py --service myanimelist
-      
-      - name: Upload scraped data
-        uses: actions/upload-artifact@v4
+      - run: python scripts/run_anime_scraper.py --service myanimelist
+      - uses: actions/upload-artifact@v4
         with:
           name: data-mal-anime
           path: scraped-data/anime/myanimelist-anime.json
           retention-days: 7
-      
-      - name: Upload checkpoint
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: checkpoint-mal-anime
           path: checkpoints/anime/myanimelist-checkpoint.json
@@ -138,94 +102,245 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Download checkpoint
-        uses: actions/download-artifact@v4
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
         with:
           name: checkpoint-kitsu-anime
           path: checkpoints/anime/
         continue-on-error: true
-      
-      - name: Scrape Kitsu
-        run: python scripts/run_anime_scraper.py --service kitsu
-      
-      - name: Upload scraped data
-        uses: actions/upload-artifact@v4
+      - run: python scripts/run_anime_scraper.py --service kitsu
+      - uses: actions/upload-artifact@v4
         with:
           name: data-kitsu-anime
           path: scraped-data/anime/kitsu-anime.json
           retention-days: 7
-      
-      - name: Upload checkpoint
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: checkpoint-kitsu-anime
           path: checkpoints/anime/kitsu-checkpoint.json
           retention-days: 90
 
+  scrape-simkl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-simkl-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape SIMKL
+        env:
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+        run: python scripts/run_anime_scraper.py --service simkl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-simkl-anime
+          path: scraped-data/anime/simkl-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-simkl-anime
+          path: checkpoints/anime/simkl-checkpoint.json
+          retention-days: 90
+
+  scrape-ann:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-ann-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - run: python scripts/run_anime_scraper.py --service animenewsnetwork
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-ann-anime
+          path: scraped-data/anime/animenewsnetwork-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-ann-anime
+          path: checkpoints/anime/animenewsnetwork-checkpoint.json
+          retention-days: 90
+
+  scrape-animeplanet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-animeplanet-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - run: python scripts/run_anime_scraper.py --service animeplanet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-animeplanet-anime
+          path: scraped-data/anime/animeplanet-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-animeplanet-anime
+          path: checkpoints/anime/animeplanet-checkpoint.json
+          retention-days: 90
+
+  scrape-livechart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-livechart-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - run: python scripts/run_anime_scraper.py --service livechart
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-livechart-anime
+          path: scraped-data/anime/livechart-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-livechart-anime
+          path: checkpoints/anime/livechart-checkpoint.json
+          retention-days: 90
+
+  scrape-tmdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-tmdb-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape TMDB
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: python scripts/run_anime_scraper.py --service themoviedb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-tmdb-anime
+          path: scraped-data/anime/themoviedb-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-tmdb-anime
+          path: checkpoints/anime/themoviedb-checkpoint.json
+          retention-days: 90
+
+  scrape-tvdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-tvdb-anime
+          path: checkpoints/anime/
+        continue-on-error: true
+      - name: Scrape TVDB
+        env:
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+        run: python scripts/run_anime_scraper.py --service tvdb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-tvdb-anime
+          path: scraped-data/anime/tvdb-anime.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-tvdb-anime
+          path: checkpoints/anime/tvdb-checkpoint.json
+          retention-days: 90
+
+  scrape-imdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python scripts/run_anime_scraper.py --service imdb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-imdb-anime
+          path: scraped-data/anime/imdb-anime.json
+          retention-days: 7
+
   # ============================================================================
-  # MAPPING JOB (runs after all scrapers complete)
+  # MAPPING JOB
   # ============================================================================
   
   map-anime:
-    needs: [scrape-anidb, scrape-anilist, scrape-mal, scrape-kitsu]
+    needs: [scrape-anidb, scrape-anilist, scrape-mal, scrape-kitsu, scrape-simkl, scrape-ann, scrape-animeplanet, scrape-livechart, scrape-tmdb, scrape-tvdb, scrape-imdb]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Download all scraped data
-        uses: actions/download-artifact@v4
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
         with:
           pattern: data-*-anime
           path: artifacts/
-      
-      - name: Move artifacts to correct location
+      - name: Move artifacts
         run: |
           mkdir -p scraped-data/anime
           find artifacts -name "*.json" -exec cp {} scraped-data/anime/ \;
           ls -la scraped-data/anime/
-      
-      - name: Run anime mapper
-        run: python scripts/run_mapper.py --type anime
-      
-      - name: Commit and push mapped data
+      - run: python scripts/run_mapper.py --type anime
+      - name: Commit mapped data
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add mapped-data/anime-list-full-mapped.json
           git diff --quiet && git diff --staged --quiet || \
             (git commit -m "Update anime mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
-      
-      - name: Generate summary
+      - name: Summary
         if: always()
         run: |
-          echo "# Anime Mapping Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Anime Mapping Complete" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
           if [ -f "mapped-data/anime-list-full-mapped.json" ]; then
             TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/anime-list-full-mapped.json'))))")
-            echo "**Total Entries:** $TOTAL" >> $GITHUB_STEP_SUMMARY
-            
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## File Size" >> $GITHUB_STEP_SUMMARY
-            du -h mapped-data/anime-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
+            echo "**Total:** $TOTAL" >> $GITHUB_STEP_SUMMARY
           fi
