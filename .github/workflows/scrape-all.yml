@@ -1,4 +1,4 @@
-name: Scrape Anime Data (All Services)
+name: Scrape Anime & Manga Data
 
 on:
   workflow_dispatch:
@@ -11,15 +11,25 @@ on:
         options:
           - full
           - update
+      media:
+        description: 'Media type to scrape'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - anime
+          - manga
   schedule:
     - cron: '0 2 * * *'  # Daily at 2 AM UTC
 
 jobs:
   # ============================================================================
-  # PARALLEL SCRAPING JOBS - ALL 11 SERVICES
+  # ANIME SCRAPING JOBS (11 services)
   # ============================================================================
   
   scrape-anidb:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,7 +55,8 @@ jobs:
           path: checkpoints/anime/anidb-checkpoint.json
           retention-days: 90
 
-  scrape-anilist:
+  scrape-anilist-anime:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -71,7 +82,8 @@ jobs:
           path: checkpoints/anime/anilist-checkpoint.json
           retention-days: 90
 
-  scrape-mal:
+  scrape-mal-anime:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -97,7 +109,8 @@ jobs:
           path: checkpoints/anime/myanimelist-checkpoint.json
           retention-days: 90
 
-  scrape-kitsu:
+  scrape-kitsu-anime:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -124,6 +137,7 @@ jobs:
           retention-days: 90
 
   scrape-simkl:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -153,6 +167,7 @@ jobs:
           retention-days: 90
 
   scrape-ann:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -179,6 +194,7 @@ jobs:
           retention-days: 90
 
   scrape-animeplanet:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -205,6 +221,7 @@ jobs:
           retention-days: 90
 
   scrape-livechart:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -231,6 +248,7 @@ jobs:
           retention-days: 90
 
   scrape-tmdb:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -260,6 +278,7 @@ jobs:
           retention-days: 90
 
   scrape-tvdb:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -289,6 +308,7 @@ jobs:
           retention-days: 90
 
   scrape-imdb:
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -305,11 +325,97 @@ jobs:
           retention-days: 7
 
   # ============================================================================
-  # MAPPING JOB
+  # MANGA SCRAPING JOBS (3 services)
+  # ============================================================================
+
+  scrape-anilist-manga:
+    if: github.event.inputs.media != 'anime' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-anilist-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      - run: python scripts/run_manga_scraper.py --service anilist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-anilist-manga
+          path: scraped-data/manga/anilist-manga.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-anilist-manga
+          path: checkpoints/manga/anilist-checkpoint.json
+          retention-days: 90
+
+  scrape-mal-manga:
+    if: github.event.inputs.media != 'anime' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-mal-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      - run: python scripts/run_manga_scraper.py --service myanimelist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-mal-manga
+          path: scraped-data/manga/myanimelist-manga.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-mal-manga
+          path: checkpoints/manga/myanimelist-checkpoint.json
+          retention-days: 90
+
+  scrape-kitsu-manga:
+    if: github.event.inputs.media != 'anime' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-kitsu-manga
+          path: checkpoints/manga/
+        continue-on-error: true
+      - run: python scripts/run_manga_scraper.py --service kitsu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-kitsu-manga
+          path: scraped-data/manga/kitsu-manga.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-kitsu-manga
+          path: checkpoints/manga/kitsu-checkpoint.json
+          retention-days: 90
+
+  # ============================================================================
+  # ANIME MAPPING JOB
   # ============================================================================
   
   map-anime:
-    needs: [scrape-anidb, scrape-anilist, scrape-mal, scrape-kitsu, scrape-simkl, scrape-ann, scrape-animeplanet, scrape-livechart, scrape-tmdb, scrape-tvdb, scrape-imdb]
+    if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
+    needs: [scrape-anidb, scrape-anilist-anime, scrape-mal-anime, scrape-kitsu-anime, scrape-simkl, scrape-ann, scrape-animeplanet, scrape-livechart, scrape-tmdb, scrape-tvdb, scrape-imdb]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -328,14 +434,14 @@ jobs:
           find artifacts -name "*.json" -exec cp {} scraped-data/anime/ \;
           ls -la scraped-data/anime/
       - run: python scripts/run_mapper.py --type anime
-      - name: Commit mapped data
+      - name: Commit anime mappings
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add mapped-data/anime-list-full-mapped.json
           git diff --quiet && git diff --staged --quiet || \
             (git commit -m "Update anime mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
-      - name: Summary
+      - name: Anime Summary
         if: always()
         run: |
           echo "# Anime Mapping Complete" >> $GITHUB_STEP_SUMMARY
@@ -343,4 +449,48 @@ jobs:
           if [ -f "mapped-data/anime-list-full-mapped.json" ]; then
             TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/anime-list-full-mapped.json'))))")
             echo "**Total:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+            du -h mapped-data/anime-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # MANGA MAPPING JOB
+  # ============================================================================
+  
+  map-manga:
+    if: github.event.inputs.media != 'anime' || github.event_name == 'schedule'
+    needs: [scrape-anilist-manga, scrape-mal-manga, scrape-kitsu-manga]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: data-*-manga
+          path: artifacts/
+      - name: Move artifacts
+        run: |
+          mkdir -p scraped-data/manga
+          find artifacts -name "*.json" -exec cp {} scraped-data/manga/ \;
+          ls -la scraped-data/manga/
+      - run: python scripts/run_mapper.py --type manga
+      - name: Commit manga mappings
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add mapped-data/manga-list-full-mapped.json
+          git diff --quiet && git diff --staged --quiet || \
+            (git commit -m "Update manga mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+      - name: Manga Summary
+        if: always()
+        run: |
+          echo "# Manga Mapping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          if [ -f "mapped-data/manga-list-full-mapped.json" ]; then
+            TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/manga-list-full-mapped.json'))))")
+            echo "**Total:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+            du -h mapped-data/manga-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
           fi
