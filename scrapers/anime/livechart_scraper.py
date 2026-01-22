@@ -1,5 +1,5 @@
 """
-Livechart scraper (web scraping based)
+Livechart scraper - Complete database from 1907
 File: scrapers/anime/livechart_scraper.py
 """
 from typing import Dict, List, Any
@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scrapers.base_scraper import BaseScraper
 
 class LivechartScraper(BaseScraper):
-    """Scraper for Livechart.me (web scraping)"""
+    """Scraper for Livechart.me - Complete database"""
     
     BASE_URL = "https://www.livechart.me"
     
@@ -27,22 +27,25 @@ class LivechartScraper(BaseScraper):
     
     def scrape(self) -> List[Dict[str, Any]]:
         """
-        Scrape Livechart data
-        Livechart organizes anime by season, so we'll scrape multiple seasons
+        Scrape Livechart's COMPLETE database
+        Starting from winter-1907 to present
         """
-        print("Scraping Livechart by season...")
-        print("Note: This covers 2020-2026 seasons\n")
+        print("Scraping Livechart's COMPLETE database...")
+        print("Starting from Winter 1907 to present")
+        print("Note: Early seasons may be empty but we'll check them all\n")
         
         results = []
         
-        # Generate seasons (year + season)
-        years = range(2020, 2027)
+        # Generate ALL seasons from 1907 to 2027
+        years = range(1907, 2028)
         seasons_list = ['winter', 'spring', 'summer', 'fall']
         
-        start_year = self.checkpoint.get("year", 2020)
+        start_year = self.checkpoint.get("year", 1907)
         start_season = self.checkpoint.get("season", 'winter')
         
         started = False
+        empty_count = 0
+        max_empty = 20  # Stop after 20 consecutive empty seasons
         
         for year in years:
             for season in seasons_list:
@@ -54,7 +57,7 @@ class LivechartScraper(BaseScraper):
                         continue
                 
                 try:
-                    print(f"  {season.capitalize()} {year}...")
+                    season_name = f"{season.capitalize()} {year}"
                     
                     url = f"{self.BASE_URL}/{season}-{year}/tv"
                     response = self.session.get(url)
@@ -63,30 +66,48 @@ class LivechartScraper(BaseScraper):
                         soup = BeautifulSoup(response.content, 'html.parser')
                         
                         # Find anime items
-                        items = soup.select('.anime-card, article.anime')
+                        items = soup.select('.anime-card, article.anime, .chart-item')
                         
-                        for item in items:
-                            try:
-                                processed = self.process_item(item)
-                                if processed:
-                                    results.append(processed)
-                            except Exception as e:
-                                continue
-                        
-                        print(f"    Found {len(items)} items")
+                        if items:
+                            for item in items:
+                                try:
+                                    processed = self.process_item(item)
+                                    if processed:
+                                        results.append(processed)
+                                except Exception:
+                                    continue
+                            
+                            print(f"  {season_name}: {len(items)} items ✓")
+                            empty_count = 0  # Reset empty counter
+                        else:
+                            # Empty season
+                            empty_count += 1
+                            if year >= 2000:  # Only show for recent years
+                                print(f"  {season_name}: 0 items (empty)")
+                            
+                            # Stop if too many consecutive empty seasons (future seasons)
+                            if empty_count >= max_empty and year >= 2027:
+                                print(f"\n  Stopped after {max_empty} empty seasons")
+                                break
                     
                     # Save checkpoint
                     self.checkpoint['year'] = year
                     self.checkpoint['season'] = season
                     self.save_checkpoint(self.checkpoint)
                     
-                    time.sleep(1)  # Extra delay between seasons
+                    # Small delay
+                    if len(results) % 100 == 0 and len(results) > 0:
+                        time.sleep(1)
                     
                 except Exception as e:
-                    print(f"    [WARN] {season} {year} failed: {e}")
+                    print(f"  {season_name}: Failed - {e}")
                     continue
+            
+            # Break if we hit too many empty seasons
+            if empty_count >= max_empty and year >= 2027:
+                break
         
-        print(f"\n✓ Processed {len(results)} items")
+        print(f"\n✓ Processed {len(results)} items from entire Livechart database")
         return results
     
     def process_item(self, item: BeautifulSoup) -> Dict[str, Any]:
@@ -106,11 +127,11 @@ class LivechartScraper(BaseScraper):
         livechart_id = match.group(1)
         
         # Get title
-        title_elem = item.select_one('h3, .anime-card__title, .main-title')
+        title_elem = item.select_one('h3, .anime-card__title, .main-title, .anime-name')
         title = title_elem.get_text(strip=True) if title_elem else f"Unknown {livechart_id}"
         
         # Get type
-        type_elem = item.select_one('.anime-card__type, .anime-type')
+        type_elem = item.select_one('.anime-card__type, .anime-type, .type')
         item_type = type_elem.get_text(strip=True) if type_elem else ""
         
         # External IDs
@@ -142,5 +163,4 @@ class LivechartScraper(BaseScraper):
     
     def extract_external_ids(self, item: Dict[str, Any]) -> Dict[str, str]:
         """Extract external IDs"""
-        # Already done in process_item
         return {}
