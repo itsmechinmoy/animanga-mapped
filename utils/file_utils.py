@@ -26,7 +26,13 @@ def load_json(filepath: Union[str, Path]) -> Any:
         raise FileNotFoundError(f"File not found: {filepath}")
     
     with open(filepath, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        content = f.read().strip()
+        
+        # Handle empty files
+        if not content:
+            raise json.JSONDecodeError("Empty file", content, 0)
+        
+        return json.loads(content)
 
 def save_json(filepath: Union[str, Path], data: Any, pretty: bool = False):
     """
