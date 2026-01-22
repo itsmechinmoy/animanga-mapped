@@ -413,6 +413,10 @@ jobs:
   # ANIME MAPPING JOB
   # ============================================================================
   
+  # ============================================================================
+  # ANIME MAPPING JOB
+  # ============================================================================
+   
   map-anime:
     if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     needs: [scrape-anidb, scrape-anilist-anime, scrape-mal-anime, scrape-kitsu-anime, scrape-simkl, scrape-ann, scrape-animeplanet, scrape-livechart, scrape-tmdb, scrape-tvdb, scrape-imdb]
@@ -424,37 +428,51 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      
+       
       - name: Download all anime artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: data-*-anime
           path: artifacts/
-      
+       
       - name: Move artifacts to scraped-data
         run: |
           mkdir -p scraped-data/anime
           find artifacts -name "*.json" -exec cp {} scraped-data/anime/ \;
           ls -la scraped-data/anime/
-      
+       
+      - name: Compress large JSON files (>50MB)
+        run: |
+          cd scraped-data/anime
+          for file in *.json; do
+            SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+            if [ $SIZE -gt 52428800 ]; then  # 50MB
+              echo "Compressing $file ($(($SIZE / 1048576))MB)..."
+              gzip -9 "$file"
+              echo "  → ${file}.gz"
+            fi
+          done
+          cd ../..
+          ls -lh scraped-data/anime/
+       
       - name: Run anime mapper
         run: python scripts/run_mapper.py --type anime
-      
+       
       - name: Commit all anime data (service files + mapped)
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
-          # Add all anime scraped data
-          git add scraped-data/anime/*.json
-          
+           
+          # Add all anime scraped data (compressed and regular)
+          git add scraped-data/anime/*.json scraped-data/anime/*.json.gz
+           
           # Add final mapped file
           git add mapped-data/anime-list-full-mapped.json
-          
+           
           # Commit if there are changes
           git diff --quiet && git diff --staged --quiet || \
             (git commit -m "Update anime data: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
-      
+       
       - name: Anime Summary
         if: always()
         run: |
@@ -462,16 +480,21 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+           
           echo "## Service Files Scraped" >> $GITHUB_STEP_SUMMARY
-          for file in scraped-data/anime/*.json; do
+          for file in scraped-data/anime/*; do
             if [ -f "$file" ]; then
-              COUNT=$(python3 -c "import json; print(len(json.load(open('$file'))))" 2>/dev/null || echo "0")
               SIZE=$(du -h "$file" | cut -f1)
-              echo "- $(basename $file): $COUNT items ($SIZE)" >> $GITHUB_STEP_SUMMARY
+              NAME=$(basename "$file")
+              if [[ "$NAME" == *.json ]]; then
+                COUNT=$(python3 -c "import json; print(len(json.load(open('$file'))))" 2>/dev/null || echo "0")
+                echo "- $NAME: $COUNT items ($SIZE)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "- $NAME: compressed ($SIZE)" >> $GITHUB_STEP_SUMMARY
+              fi
             fi
           done
-          
+           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Final Mapped File" >> $GITHUB_STEP_SUMMARY
           if [ -f "mapped-data/anime-list-full-mapped.json" ]; then
