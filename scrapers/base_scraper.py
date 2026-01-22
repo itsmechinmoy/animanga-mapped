@@ -24,10 +24,9 @@ class BaseScraper(ABC):
         
         # Import here to avoid circular imports
         from utils.http_utils import RateLimitedSession
-        from utils.file_utils import load_json, save_json
+        from utils.file_utils import save_json
         
         self.session = RateLimitedSession(self.get_rate_limit())
-        self._load_json = load_json
         self._save_json = save_json
         
         # Setup paths
@@ -40,7 +39,7 @@ class BaseScraper(ABC):
         self.output_file = self.output_dir / f"{service_name}-{media_type}.json"
         self.checkpoint_file = self.checkpoint_dir / f"{service_name}-checkpoint.json"
         
-        # Load checkpoint
+        # Load checkpoint (with error handling)
         self.checkpoint = self.load_checkpoint()
         
         # Results storage
@@ -86,19 +85,40 @@ class BaseScraper(ABC):
     
     def load_checkpoint(self) -> Dict[str, Any]:
         """
-        Load scraping checkpoint
+        Load scraping checkpoint with error handling
         
         Returns:
             Checkpoint data dictionary
         """
-        if self.checkpoint_file.exists():
-            return self._load_json(self.checkpoint_file)
-        return {
+        default_checkpoint = {
             "last_id": 0,
             "page": 1,
             "offset": 0,
             "last_updated": None
         }
+        
+        if not self.checkpoint_file.exists():
+            return default_checkpoint
+        
+        try:
+            from utils.file_utils import load_json
+            checkpoint = load_json(self.checkpoint_file)
+            
+            # Validate checkpoint has expected structure
+            if not isinstance(checkpoint, dict):
+                print(f"[WARN] Invalid checkpoint format, using defaults")
+                return default_checkpoint
+            
+            return checkpoint
+            
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"[WARN] Corrupted checkpoint file, starting fresh: {e}")
+            # Delete corrupted checkpoint
+            try:
+                self.checkpoint_file.unlink()
+            except:
+                pass
+            return default_checkpoint
     
     def save_checkpoint(self, data: Dict[str, Any]):
         """
