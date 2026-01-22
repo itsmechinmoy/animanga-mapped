@@ -1,0 +1,55 @@
+# .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Checkpoints (artifacts only, not committed)
+checkpoints/
+
+# Logs
+logs/
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+.directory
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Keep scraped data (COMMIT INDIVIDUAL SERVICE FILES)
+!scraped-data/
+
+# Keep mapped data (COMMIT FINAL MERGED FILES)
+!mapped-data/
+
+# Keep directory structure
+!logs/.gitkeep
