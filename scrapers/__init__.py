@@ -1,33 +1,31 @@
-# scrapers/__init__.py
 """
-Scrapers package
+Scrapers package - Contains all anime and manga scrapers
 File: scrapers/__init__.py
 """
 
 from .base_scraper import BaseScraper
 
-__all__ = ['BaseScraper']
+# Anime scrapers
+from .anime.anidb_scraper import AniDBScraper
+from .anime.anilist_scraper import AniListAnimeScraper
+from .anime.myanimelist_scraper import MyAnimeListAnimeScraper
+from .anime.kitsu_scraper import KitsuAnimeScraper
+from .anime.simkl_scraper import SIMKLAnimeScraper
+from .anime.animenewsnetwork_scraper import AnimeNewsNetworkScraper
+from .anime.animeplanet_scraper import AnimePlanetScraper
+from .anime.livechart_scraper import LivechartScraper
+from .anime.themoviedb_scraper import TMDBAnimeScraper
+from .anime.tvdb_scraper import TVDBScraper
+from .anime.imdb_scraper import IMDBScraper
 
-
-# scrapers/anime/__init__.py
-"""
-Anime scrapers package - Complete
-File: scrapers/anime/__init__.py
-"""
-
-from .anidb_scraper import AniDBScraper
-from .anilist_scraper import AniListAnimeScraper
-from .myanimelist_scraper import MyAnimeListAnimeScraper
-from .kitsu_scraper import KitsuAnimeScraper
-from .simkl_scraper import SIMKLAnimeScraper
-from .animenewsnetwork_scraper import AnimeNewsNetworkScraper
-from .animeplanet_scraper import AnimePlanetScraper
-from .livechart_scraper import LivechartScraper
-from .themoviedb_scraper import TMDBAnimeScraper
-from .tvdb_scraper import TVDBScraper
-from .imdb_scraper import IMDBScraper
+# Manga scrapers
+from .manga.anilist_scraper import AniListMangaScraper
+from .manga.myanimelist_scraper import MyAnimeListMangaScraper
+from .manga.kitsu_scraper import KitsuMangaScraper
 
 __all__ = [
+    'BaseScraper',
+    # Anime
     'AniDBScraper',
     'AniListAnimeScraper',
     'MyAnimeListAnimeScraper',
@@ -38,21 +36,8 @@ __all__ = [
     'LivechartScraper',
     'TMDBAnimeScraper',
     'TVDBScraper',
-    'IMDBScraper'
-]
-
-
-# scrapers/manga/__init__.py
-"""
-Manga scrapers package
-File: scrapers/manga/__init__.py
-"""
-
-from .anilist_scraper import AniListMangaScraper
-from .myanimelist_scraper import MyAnimeListMangaScraper
-from .kitsu_scraper import KitsuMangaScraper
-
-__all__ = [
+    'IMDBScraper',
+    # Manga
     'AniListMangaScraper',
     'MyAnimeListMangaScraper',
     'KitsuMangaScraper'
