@@ -33,7 +33,7 @@ class SIMKLAnimeScraper(BaseScraper):
         self.stop_scraping = False
     
     def get_rate_limit(self) -> float:
-        return 1.2  # Increased delay to be safer
+        return 1.5  # Increased delay to avoid 429/412 errors
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape SIMKL using API endpoints"""
@@ -68,12 +68,13 @@ class SIMKLAnimeScraper(BaseScraper):
 
     def scrape_catalog(self, media_type: str) -> List[Dict[str, Any]]:
         """
-        Iterate through years and pages using the 'release' parameter.
+        Iterate through years using the 'release' parameter.
         """
         results = []
         current_year = datetime.datetime.now().year + 1
         start_year = 1990 
         
+        # Docs: "Genres API duplicates the urls of the Genres on the website"
         endpoint = f"/anime/genres/all" if media_type == "anime" else f"/movies/genres/all"
 
         for year in range(current_year, start_year - 1, -1):
@@ -91,12 +92,13 @@ class SIMKLAnimeScraper(BaseScraper):
 
                 try:
                     url = f"{self.API_URL}{endpoint}"
-                    # UPDATED: Use 'release' instead of 'year'
+                    
+                    # CRITICAL FIX: Use 'release' instead of 'year'
                     params = {
                         "release": year,  
                         "page": page,
                         "limit": 50, 
-                        "sort": "rank" # Sort by rank to get most popular first
+                        "sort": "rank" 
                     }
                     
                     response = self.session.get(url, headers=self.headers, params=params)
@@ -106,7 +108,16 @@ class SIMKLAnimeScraper(BaseScraper):
                         
                         if not data:
                             break 
-                            
+                        
+                        # SAFETY CHECK: Verify the API is actually filtering
+                        # If we are on page 1 and the first item's year is wildly different, 
+                        # the filter is failing. Abort to save quota.
+                        if page == 1 and data:
+                            first_item_year = data[0].get('year')
+                            if first_item_year and abs(first_item_year - year) > 1:
+                                print(f"  [!] API IGNORING FILTER: Requested {year}, got {first_item_year}. Aborting year.")
+                                break
+
                         for item in data:
                             try:
                                 processed = self.process_item(item, media_type)
