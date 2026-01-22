@@ -1,12 +1,11 @@
 """
-AnimeNewsNetwork scraper
+AnimeNewsNetwork scraper - Optimized for speed
 File: scrapers/anime/animenewsnetwork_scraper.py
 """
 from typing import Dict, List, Any
 import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
-import time
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -14,9 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scrapers.base_scraper import BaseScraper
 
 class AnimeNewsNetworkScraper(BaseScraper):
-    """Scraper for AnimeNewsNetwork API"""
+    """Scraper for AnimeNewsNetwork API - Optimized"""
     
-    # ANN uses XML API
     API_URL = "https://cdn.animenewsnetwork.com/encyclopedia/api.xml"
     REPORTS_URL = "https://www.animenewsnetwork.com/encyclopedia/reports.xml"
     
@@ -24,145 +22,132 @@ class AnimeNewsNetworkScraper(BaseScraper):
         super().__init__("animenewsnetwork", "anime")
     
     def get_rate_limit(self) -> float:
-        return 2.0  # 2 seconds - ANN has strict rate limits
+        return 1.0  # Reduced from 2s to 1s
     
     def scrape(self) -> List[Dict[str, Any]]:
         """
-        Scrape ANN data
-        ANN API is limited and doesn't provide a full list endpoint
-        We'll use the reports.xml which gives us a list of anime IDs
+        Scrape ANN data - BATCH MODE
+        Fetches multiple IDs per request to speed up
         """
         print("Fetching anime list from ANN reports...")
-        print("This may take a long time due to rate limits (2s per request)\n")
+        print("Using BATCH mode (multiple IDs per request)\n")
         
         results = []
         
         try:
-            # Get the list of anime from reports
+            # Get ID list
             print("Step 1: Fetching anime ID list...")
             response = self.session.get(
                 f"{self.REPORTS_URL}?id=155&type=anime&nlist=all"
             )
             
             if response.status_code != 200:
-                print(f"[!] Failed to fetch ANN reports: {response.status_code}")
+                print(f"[!] Failed: {response.status_code}")
                 return results
             
-            # Parse the XML
-            print("Step 2: Parsing XML response...")
+            print("Step 2: Parsing XML...")
             root = ET.fromstring(response.content)
-            
-            # Extract all anime items
             items = root.findall('.//item')
-            total = len(items)
-            print(f"✓ Found {total} anime IDs in reports\n")
             
-            print("Step 3: Fetching details for each anime...")
-            print("Note: Rate limited to 1 request per 2 seconds\n")
+            # Extract all IDs
+            all_ids = []
+            for item in items:
+                ann_id_elem = item.find('id')
+                if ann_id_elem is not None:
+                    all_ids.append(int(ann_id_elem.text))
             
+            total = len(all_ids)
+            print(f"✓ Found {total} anime IDs\n")
+            
+            # Filter already processed
             last_id = self.checkpoint.get("last_id", 0)
+            ids_to_process = [id for id in all_ids if id > last_id]
+            
+            print(f"Step 3: Fetching details in batches...")
+            print(f"To process: {len(ids_to_process)} IDs")
+            print(f"Batch size: 50 IDs per request\n")
+            
+            # Process in batches of 50
+            batch_size = 50
             processed_count = 0
             
-            for idx, item in enumerate(items, 1):
+            for i in range(0, len(ids_to_process), batch_size):
+                batch = ids_to_process[i:i+batch_size]
+                batch_num = (i // batch_size) + 1
+                total_batches = (len(ids_to_process) + batch_size - 1) // batch_size
+                
+                print(f"  Batch {batch_num}/{total_batches} ({len(batch)} IDs)...", end=" ")
+                
                 try:
-                    ann_id_elem = item.find('id')
-                    if ann_id_elem is None:
-                        continue
+                    # Fetch batch
+                    ids_str = "/".join(map(str, batch))
+                    url = f"{self.API_URL}?anime={ids_str}"
                     
-                    ann_id = int(ann_id_elem.text)
+                    response = self.session.get(url)
                     
-                    # Skip if we've already processed this
-                    if ann_id <= last_id:
-                        continue
+                    if response.status_code == 200:
+                        root = ET.fromstring(response.content)
+                        
+                        # Process each anime in batch
+                        for anime in root.findall('.//anime'):
+                            try:
+                                item = self.process_anime(anime)
+                                if item:
+                                    results.append(item)
+                                    processed_count += 1
+                            except:
+                                continue
+                        
+                        print(f"✓ {processed_count} items")
+                    else:
+                        print(f"Failed ({response.status_code})")
                     
-                    # Get details for this anime
-                    processed = self.fetch_anime_details(ann_id)
-                    if processed:
-                        results.append(processed)
-                        processed_count += 1
-                    
-                    # Show progress more frequently
-                    if idx % 10 == 0:
-                        elapsed = idx * 2  # Rough estimate
-                        remaining = (total - idx) * 2
-                        print(f"  [{idx}/{total}] Processed {processed_count} items | "
-                              f"Elapsed: ~{elapsed//60}m | Remaining: ~{remaining//60}m")
-                    
-                    # Save checkpoint every 50 items
-                    if idx % 50 == 0:
-                        self.checkpoint['last_id'] = ann_id
+                    # Save checkpoint after each batch
+                    if batch:
+                        self.checkpoint['last_id'] = max(batch)
                         self.save_checkpoint(self.checkpoint)
-                        print(f"  ✓ Checkpoint saved at ID {ann_id}")
                     
                 except Exception as e:
-                    print(f"  [WARN] Failed to process item {idx}: {e}")
+                    print(f"Error: {e}")
                     continue
             
-            # Final checkpoint
-            if items:
-                final_id = int(items[-1].find('id').text)
-                self.checkpoint['last_id'] = final_id
-                self.save_checkpoint(self.checkpoint)
-            
-            print(f"\n✓ Processed {len(results)} items")
+            print(f"\n✓ Total processed: {len(results)} items")
             return results
             
         except Exception as e:
-            print(f"[ERROR] Failed to scrape ANN: {e}")
+            print(f"[ERROR] {e}")
             return results
     
-    def fetch_anime_details(self, ann_id: int) -> Dict[str, Any]:
-        """Fetch details for a specific anime ID"""
-        try:
-            response = self.session.get(
-                f"{self.API_URL}?anime={ann_id}"
-            )
-            
-            if response.status_code != 200:
-                return None
-            
-            root = ET.fromstring(response.content)
-            anime = root.find('.//anime')
-            
-            if anime is None:
-                return None
-            
-            # Extract title
-            title_elem = anime.find('.//info[@type="Main title"]')
-            title = title_elem.text if title_elem is not None else f"Unknown {ann_id}"
-            
-            # Extract type
-            type_elem = anime.find('.//info[@type="Genres"]')
-            item_type = type_elem.text if type_elem is not None else ""
-            
-            # Extract external IDs
-            external_ids = self.extract_external_ids(anime)
-            
-            # Build metadata
-            metadata = {
-                "titles": self.extract_titles(anime),
-                "type": item_type,
-                "episodes": self.extract_episodes(anime),
-                "vintage": self.extract_vintage(anime),
-                "genres": self.extract_genres(anime),
-                "themes": self.extract_themes(anime),
-                "related": self.extract_related(anime)
-            }
-            
-            return self.format_item(ann_id, title, item_type, external_ids, metadata)
-            
-        except Exception as e:
+    def process_anime(self, anime: ET.Element) -> Dict[str, Any]:
+        """Process anime element"""
+        ann_id = anime.get('id')
+        if not ann_id:
             return None
+        
+        # Extract title
+        title_elem = anime.find('.//info[@type="Main title"]')
+        title = title_elem.text if title_elem is not None else f"Unknown {ann_id}"
+        
+        # Extract type
+        type_elem = anime.find('.//info[@type="Genres"]')
+        item_type = type_elem.text if type_elem is not None else ""
+        
+        # Build metadata
+        metadata = {
+            "titles": self.extract_titles(anime),
+            "episodes": self.extract_episodes(anime),
+            "vintage": self.extract_vintage(anime),
+        }
+        
+        return self.format_item(ann_id, title, item_type, {'animenewsnetwork': ann_id}, metadata)
     
     def extract_titles(self, anime: ET.Element) -> Dict[str, str]:
-        """Extract all title variants"""
+        """Extract titles"""
         titles = {}
-        
         for info in anime.findall('.//info[@type]'):
             info_type = info.get('type', '')
-            if 'title' in info_type.lower():
+            if 'title' in info_type.lower() and info.text:
                 titles[info_type] = info.text
-        
         return titles
     
     def extract_episodes(self, anime: ET.Element) -> int:
@@ -176,41 +161,10 @@ class AnimeNewsNetworkScraper(BaseScraper):
         return None
     
     def extract_vintage(self, anime: ET.Element) -> str:
-        """Extract vintage/air date"""
+        """Extract vintage"""
         vintage_elem = anime.find('.//info[@type="Vintage"]')
         return vintage_elem.text if vintage_elem is not None else None
     
-    def extract_genres(self, anime: ET.Element) -> List[str]:
-        """Extract genres"""
-        genres = []
-        for info in anime.findall('.//info[@type="Genres"]'):
-            if info.text:
-                genres.append(info.text)
-        return genres
-    
-    def extract_themes(self, anime: ET.Element) -> List[str]:
-        """Extract themes"""
-        themes = []
-        for info in anime.findall('.//info[@type="Themes"]'):
-            if info.text:
-                themes.append(info.text)
-        return themes
-    
-    def extract_related(self, anime: ET.Element) -> List[Dict[str, Any]]:
-        """Extract related anime"""
-        related = []
-        for rel in anime.findall('.//related-prev') + anime.findall('.//related-next'):
-            related.append({
-                'id': rel.get('id'),
-                'rel': rel.get('rel')
-            })
-        return related
-    
     def extract_external_ids(self, anime: ET.Element) -> Dict[str, str]:
-        """Extract external IDs from ANN anime"""
-        ids = {'animenewsnetwork': anime.get('id')}
-        
-        # ANN doesn't directly provide external IDs in their API
-        # These would need to be cross-referenced
-        
-        return ids
+        """Extract external IDs"""
+        return {'animenewsnetwork': anime.get('id')}
