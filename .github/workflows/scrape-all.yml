@@ -412,11 +412,7 @@ jobs:
   # ============================================================================
   # ANIME MAPPING JOB
   # ============================================================================
-  
-  # ============================================================================
-  # ANIME MAPPING JOB
-  # ============================================================================
-   
+ 
   map-anime:
     if: github.event.inputs.media != 'manga' || github.event_name == 'schedule'
     needs: [scrape-anidb, scrape-anilist-anime, scrape-mal-anime, scrape-kitsu-anime, scrape-simkl, scrape-ann, scrape-animeplanet, scrape-livechart, scrape-tmdb, scrape-tvdb, scrape-imdb]
