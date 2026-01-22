@@ -1,6 +1,7 @@
 """
 Anime-Planet scraper (web scraping based)
 File: scrapers/anime/animeplanet_scraper.py
+NOTE: Anime-Planet blocks automated scraping. This scraper may not work.
 """
 from typing import Dict, List, Any
 import sys
@@ -21,22 +22,36 @@ class AnimePlanetScraper(BaseScraper):
     
     def __init__(self):
         super().__init__("animeplanet", "anime")
+        
+        # Add more realistic headers to avoid being blocked
+        self.session.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
     
     def get_rate_limit(self) -> float:
-        return 2.0  # 2 seconds - be respectful with web scraping
+        return 3.0  # 3 seconds - be extra respectful
     
     def scrape(self) -> List[Dict[str, Any]]:
         """
         Scrape Anime-Planet data via web scraping
-        Note: This is a simplified implementation
-        A full implementation would require more sophisticated pagination
+        WARNING: Anime-Planet actively blocks scrapers (403 Forbidden)
+        This scraper will likely return 0 results
         """
-        print("Scraping Anime-Planet via web scraping...")
-        print("Note: This may take a while and is limited by pagination\n")
+        print("WARNING: Anime-Planet blocks automated scraping")
+        print("This scraper may return 0 results due to 403 Forbidden errors")
+        print("Attempting anyway with enhanced headers...\n")
         
         results = []
         page = self.checkpoint.get("page", 1)
-        max_pages = 500  # Limit to avoid excessive requests
+        max_pages = 10  # Limit attempts
+        consecutive_errors = 0
+        max_consecutive_errors = 3
         
         while page <= max_pages:
             try:
@@ -45,17 +60,26 @@ class AnimePlanetScraper(BaseScraper):
                 
                 response = self.session.get(url)
                 
-                if response.status_code != 200:
-                    print(f"    [!] HTTP {response.status_code}")
+                if response.status_code == 403:
+                    print(f"    [!] Access Forbidden (403) - Anime-Planet blocks scrapers")
+                    print(f"    [!] Stopping scrape. Use AniDB/AniList instead for anime-planet slugs")
                     break
                 
+                if response.status_code != 200:
+                    print(f"    [!] HTTP {response.status_code}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        break
+                    continue
+                
+                consecutive_errors = 0
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # Find anime cards
                 cards = soup.select('li.card')
                 
                 if not cards:
-                    print("    No more items found")
+                    print("    No items found")
                     break
                 
                 for card in cards:
@@ -82,7 +106,13 @@ class AnimePlanetScraper(BaseScraper):
                 
             except Exception as e:
                 print(f"    [ERROR] Page {page} failed: {e}")
-                break
+                consecutive_errors += 1
+                if consecutive_errors >= max_consecutive_errors:
+                    break
+        
+        if not results:
+            print("\n[!] No results - Anime-Planet blocks scrapers")
+            print("[!] Consider using other services for anime-planet IDs")
         
         print(f"\n✓ Processed {len(results)} items")
         return results
