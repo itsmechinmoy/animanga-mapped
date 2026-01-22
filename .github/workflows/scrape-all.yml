@@ -557,3 +557,12 @@ jobs:
               fi
             fi
           done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Final Mapped File" >> $GITHUB_STEP_SUMMARY
+          if [ -f "mapped-data/manga-list-full-mapped.json" ]; then
+            TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/manga-list-full-mapped.json'))))")
+            SIZE=$(du -h mapped-data/manga-list-full-mapped.json | cut -f1)
+            echo "- Total unique manga: $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "- File size: $SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
