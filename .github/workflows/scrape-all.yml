@@ -424,32 +424,61 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
+      
+      - name: Download all anime artifacts
+        uses: actions/download-artifact@v4
         with:
           pattern: data-*-anime
           path: artifacts/
-      - name: Move artifacts
+      
+      - name: Move artifacts to scraped-data
         run: |
           mkdir -p scraped-data/anime
           find artifacts -name "*.json" -exec cp {} scraped-data/anime/ \;
           ls -la scraped-data/anime/
-      - run: python scripts/run_mapper.py --type anime
-      - name: Commit anime mappings
+      
+      - name: Run anime mapper
+        run: python scripts/run_mapper.py --type anime
+      
+      - name: Commit all anime data (service files + mapped)
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # Add all anime scraped data
+          git add scraped-data/anime/*.json
+          
+          # Add final mapped file
           git add mapped-data/anime-list-full-mapped.json
+          
+          # Commit if there are changes
           git diff --quiet && git diff --staged --quiet || \
-            (git commit -m "Update anime mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+            (git commit -m "Update anime data: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+      
       - name: Anime Summary
         if: always()
         run: |
-          echo "# Anime Mapping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "# Anime Scraping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Service Files Scraped" >> $GITHUB_STEP_SUMMARY
+          for file in scraped-data/anime/*.json; do
+            if [ -f "$file" ]; then
+              COUNT=$(python3 -c "import json; print(len(json.load(open('$file'))))" 2>/dev/null || echo "0")
+              SIZE=$(du -h "$file" | cut -f1)
+              echo "- $(basename $file): $COUNT items ($SIZE)" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Final Mapped File" >> $GITHUB_STEP_SUMMARY
           if [ -f "mapped-data/anime-list-full-mapped.json" ]; then
             TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/anime-list-full-mapped.json'))))")
-            echo "**Total:** $TOTAL" >> $GITHUB_STEP_SUMMARY
-            du -h mapped-data/anime-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
+            SIZE=$(du -h mapped-data/anime-list-full-mapped.json | cut -f1)
+            echo "- Total unique anime: $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "- File size: $SIZE" >> $GITHUB_STEP_SUMMARY
           fi
 
   # ============================================================================
@@ -467,30 +496,59 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
+      
+      - name: Download all manga artifacts
+        uses: actions/download-artifact@v4
         with:
           pattern: data-*-manga
           path: artifacts/
-      - name: Move artifacts
+      
+      - name: Move artifacts to scraped-data
         run: |
           mkdir -p scraped-data/manga
           find artifacts -name "*.json" -exec cp {} scraped-data/manga/ \;
           ls -la scraped-data/manga/
-      - run: python scripts/run_mapper.py --type manga
-      - name: Commit manga mappings
+      
+      - name: Run manga mapper
+        run: python scripts/run_mapper.py --type manga
+      
+      - name: Commit all manga data (service files + mapped)
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # Add all manga scraped data
+          git add scraped-data/manga/*.json
+          
+          # Add final mapped file
           git add mapped-data/manga-list-full-mapped.json
+          
+          # Commit if there are changes
           git diff --quiet && git diff --staged --quiet || \
-            (git commit -m "Update manga mappings: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+            (git commit -m "Update manga data: $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+      
       - name: Manga Summary
         if: always()
         run: |
-          echo "# Manga Mapping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "# Manga Scraping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Service Files Scraped" >> $GITHUB_STEP_SUMMARY
+          for file in scraped-data/manga/*.json; do
+            if [ -f "$file" ]; then
+              COUNT=$(python3 -c "import json; print(len(json.load(open('$file'))))" 2>/dev/null || echo "0")
+              SIZE=$(du -h "$file" | cut -f1)
+              echo "- $(basename $file): $COUNT items ($SIZE)" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Final Mapped File" >> $GITHUB_STEP_SUMMARY
           if [ -f "mapped-data/manga-list-full-mapped.json" ]; then
             TOTAL=$(python3 -c "import json; print(len(json.load(open('mapped-data/manga-list-full-mapped.json'))))")
-            echo "**Total:** $TOTAL" >> $GITHUB_STEP_SUMMARY
-            du -h mapped-data/manga-list-full-mapped.json >> $GITHUB_STEP_SUMMARY
+            SIZE=$(du -h mapped-data/manga-list-full-mapped.json | cut -f1)
+            echo "- Total unique manga: $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "- File size: $SIZE" >> $GITHUB_STEP_SUMMARY
           fi
