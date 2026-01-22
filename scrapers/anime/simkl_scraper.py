@@ -19,9 +19,17 @@ class SIMKLAnimeScraper(BaseScraper):
     
     API_URL = "https://api.simkl.com"
     
+    # Standard Simkl Genres
+    GENRES = [
+        "action", "adventure", "animation", "comedy", "crime", "documentary", 
+        "drama", "family", "fantasy", "history", "horror", "music", "mystery", 
+        "romance", "science-fiction", "thriller", "war", "western", "anime"
+    ]
+
     def __init__(self):
         super().__init__("simkl", "anime")
         self.api_key = os.getenv("SIMKL_CLIENT_ID")
+        self.seen_ids = set() # Global deduplication
         
         if not self.api_key:
             print("[WARN] SIMKL_CLIENT_ID environment variable not set")
@@ -33,7 +41,7 @@ class SIMKLAnimeScraper(BaseScraper):
         self.stop_scraping = False
     
     def get_rate_limit(self) -> float:
-        return 1.5  # Increased delay to avoid 429/412 errors
+        return 1.2 
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape SIMKL using API endpoints"""
@@ -44,112 +52,117 @@ class SIMKLAnimeScraper(BaseScraper):
         print("Scraping SIMKL via API...")
         results = []
         
-        # 1. Scrape Anime Catalog
+        # 1. Scrape Anime (Usually smaller, can arguably do just by year, but safety first)
         if not self.stop_scraping:
             print("\n--- Scraping Anime Catalog ---")
             results.extend(self.scrape_catalog("anime"))
 
-        # 2. Scrape Movies Catalog
+        # 2. Scrape Movies (Huge, definitely needs Genre + Year splitting)
         if not self.stop_scraping:
             print("\n--- Scraping Movies Catalog ---")
             results.extend(self.scrape_catalog("movies"))
         
-        # Deduplicate
-        seen_ids = set()
-        unique_results = []
-        for item in results:
-            s_id = item.get('id') or item.get('simkl_id') 
-            if s_id and s_id not in seen_ids:
-                seen_ids.add(s_id)
-                unique_results.append(item)
-        
-        print(f"\n✓ Total unique items: {len(unique_results)}")
-        return unique_results
+        print(f"\n✓ Total unique items scraped: {len(results)}")
+        return results
 
     def scrape_catalog(self, media_type: str) -> List[Dict[str, Any]]:
         """
-        Iterate through years using the 'release' parameter.
+        Iterate through Years AND Genres to keep pagination shallow.
         """
         results = []
         current_year = datetime.datetime.now().year + 1
-        start_year = 1990 
+        start_year = 1980 # Adjust based on how deep you want to go
         
-        # Docs: "Genres API duplicates the urls of the Genres on the website"
-        endpoint = f"/anime/genres/all" if media_type == "anime" else f"/movies/genres/all"
+        # For anime, we can iterate just by year usually, but 'genres/all' failed you before.
+        # We will iterate genres for both to be safe.
+        base_endpoint = f"/anime/genres" if media_type == "anime" else f"/movies/genres"
 
         for year in range(current_year, start_year - 1, -1):
-            if self.stop_scraping:
-                break
+            if self.stop_scraping: break
+            
+            print(f"\n>>> Processing {media_type.capitalize()} Year: {year}")
+            
+            # Loop genres within the year to keep list size < 2000 (Simkl pagination limit)
+            for genre in self.GENRES:
+                if self.stop_scraping: break
                 
-            page = 1
-            year_count = 0
-            
-            print(f"Processing {media_type.capitalize()} Year: {year}...")
-            
-            while True:
-                if self.stop_scraping:
-                    break
+                # Check if genre exists for this media type (simple heuristic or try/catch)
+                page = 1
+                items_found_in_genre = 0
+                
+                while True:
+                    if self.stop_scraping: break
 
-                try:
-                    url = f"{self.API_URL}{endpoint}"
-                    
-                    # CRITICAL FIX: Use 'release' instead of 'year'
-                    params = {
-                        "release": year,  
-                        "page": page,
-                        "limit": 50, 
-                        "sort": "rank" 
-                    }
-                    
-                    response = self.session.get(url, headers=self.headers, params=params)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
+                    try:
+                        # Construct URL: /anime/genres/{slug}
+                        url = f"{self.API_URL}{base_endpoint}/{genre}"
                         
-                        if not data:
-                            break 
+                        params = {
+                            "release": year,    # The critical fix: 'release' not 'year'
+                            "page": page,
+                            "limit": 50,
+                            "sort": "rank"      # Ensure popular items come first
+                        }
                         
-                        # SAFETY CHECK: Verify the API is actually filtering
-                        # If we are on page 1 and the first item's year is wildly different, 
-                        # the filter is failing. Abort to save quota.
-                        if page == 1 and data:
+                        response = self.session.get(url, headers=self.headers, params=params)
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            
+                            # SAFETY CHECK: If empty or API ignored filter
+                            if not data:
+                                break
+                                
+                            # Double check the API isn't ignoring 'release' param
+                            # If we asked for 2024 and got 1990, the filter failed.
                             first_item_year = data[0].get('year')
-                            if first_item_year and abs(first_item_year - year) > 1:
-                                print(f"  [!] API IGNORING FILTER: Requested {year}, got {first_item_year}. Aborting year.")
+                            if first_item_year and abs(first_item_year - year) > 2:
+                                # Allow slight deviation for release dates vs production year
+                                print(f"  [!] API ignored filter (Asked {year}, got {first_item_year}). Skipping...")
                                 break
 
-                        for item in data:
-                            try:
-                                processed = self.process_item(item, media_type)
-                                results.append(processed)
-                                year_count += 1
-                            except Exception:
-                                continue
-                        
-                        # Pagination Check
-                        if len(data) < 50:
+                            for item in data:
+                                try:
+                                    s_id = item.get('ids', {}).get('simkl')
+                                    if s_id and s_id not in self.seen_ids:
+                                        processed = self.process_item(item, media_type)
+                                        results.append(processed)
+                                        self.seen_ids.add(s_id)
+                                        items_found_in_genre += 1
+                                except Exception:
+                                    continue
+                            
+                            # Pagination Check
+                            if len(data) < 50:
+                                break
+                            
+                            # Safety limit: Simkl rarely allows > 20 pages (1000 items) per filter
+                            if page > 30: 
+                                break
+                                
+                            page += 1
+                            time.sleep(self.get_rate_limit())
+                            
+                        elif response.status_code == 404:
+                            # Genre might not exist for this media type
+                            break
+                        elif response.status_code == 412:
+                            print(f"  [!] Rate/Pagination limit hit (412). Skipping rest of {genre}...")
+                            break 
+                        elif response.status_code == 429:
+                            print(f"  [!] 429 Too Many Requests. Sleeping 10s...")
+                            time.sleep(10)
+                            continue 
+                        else:
+                            print(f"  [!] Error {response.status_code} on {url}")
                             break
                             
-                        page += 1
-                        time.sleep(self.get_rate_limit())
-                        
-                    elif response.status_code == 412:
-                        print(f"  [!!!] CRITICAL: Rate limit/Quota exceeded (412). Stopping script.")
-                        self.stop_scraping = True
+                    except Exception as e:
+                        print(f"  [!] Request failed: {e}")
                         break
-                    elif response.status_code == 429:
-                        print(f"  [!] Rate limit hit on page {page}. Sleeping 10s...")
-                        time.sleep(10)
-                        continue 
-                    else:
-                        print(f"  [!] Error {response.status_code} on {url}")
-                        break
-                        
-                except Exception as e:
-                    print(f"  [!] Request failed: {e}")
-                    break
-            
-            print(f"  Finished {year}: found {year_count} items")
+                
+                if items_found_in_genre > 0:
+                    print(f"  {genre}: {items_found_in_genre} new items")
             
         return results
 
@@ -183,7 +196,6 @@ class SIMKLAnimeScraper(BaseScraper):
         ids = item.get('ids', {})
         external_ids = {'simkl': str(ids.get('simkl') or ids.get('simkl_id', ''))}
         
-        # Map common IDs
         if ids.get('mal'): external_ids['mal'] = str(ids['mal'])
         if ids.get('anilist'): external_ids['anilist'] = str(ids['anilist'])
         if ids.get('anidb'): external_ids['anidb'] = str(ids['anidb'])
