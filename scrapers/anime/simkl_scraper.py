@@ -6,6 +6,8 @@ from typing import Dict, List, Any
 import sys
 from pathlib import Path
 import os
+import time
+import datetime
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -25,11 +27,12 @@ class SIMKLAnimeScraper(BaseScraper):
             print("[WARN] SIMKL_CLIENT_ID environment variable not set")
         
         self.headers = {
-            "simkl-api-key": self.api_key if self.api_key else ""
+            "simkl-api-key": self.api_key if self.api_key else "",
+            "Content-Type": "application/json"
         }
     
     def get_rate_limit(self) -> float:
-        return 0.5
+        return 0.8  # Slight increase to be safe with pagination loops
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape SIMKL using API endpoints"""
@@ -38,92 +41,113 @@ class SIMKLAnimeScraper(BaseScraper):
             return []
         
         print("Scraping SIMKL via API...")
-        print("Note: Limited by available public endpoints\n")
-        
         results = []
         
-        # Available SIMKL API endpoints
-        results.extend(self.scrape_lists())
-        results.extend(self.scrape_genres())
+        # 1. Scrape Anime Catalog
+        print("\n--- Scraping Anime Catalog ---")
+        results.extend(self.scrape_catalog("anime"))
+
+        # 2. Scrape Movies Catalog
+        print("\n--- Scraping Movies Catalog ---")
+        results.extend(self.scrape_catalog("movies"))
         
         # Deduplicate
         seen_ids = set()
         unique_results = []
         for item in results:
-            simkl_id = item.get('id')
-            if simkl_id and simkl_id not in seen_ids:
-                seen_ids.add(simkl_id)
+            # Create a unique key based on SIMKL ID and Type
+            simkl_id = item.get('simkl_id') # format_item puts id in top level or mapped_id
+            # If format_item structure varies, check where ID is stored. 
+            # BaseScraper usually expects mapped data. 
+            # Let's rely on the ID present in the mapped dictionary.
+            
+            # Extract ID from the formatted item to ensure uniqueness
+            # The format_item method typically returns dict with 'id', 'title' etc.
+            # We need to check how your base scraper expects it, but usually:
+            s_id = item.get('id') or item.get('simkl_id') 
+
+            if s_id and s_id not in seen_ids:
+                seen_ids.add(s_id)
                 unique_results.append(item)
         
         print(f"\n✓ Total unique items: {len(unique_results)}")
         return unique_results
-    
-    def scrape_lists(self) -> List[Dict[str, Any]]:
-        """Scrape from trending/popular lists"""
-        print("Scraping lists...")
+
+    def scrape_catalog(self, media_type: str) -> List[Dict[str, Any]]:
+        """
+        Iterate through years and pages to get comprehensive coverage.
+        Using /genres/all endpoint which mimics the 'All' filter on the website.
+        """
         results = []
+        current_year = datetime.datetime.now().year + 2
+        start_year = 1990 # Adjust as needed. Pre-1990 anime exists but is less dense.
         
-        endpoints = [
-            ("/anime/trending", "anime"),
-            ("/anime/popular", "anime"),
-            ("/movies/trending", "movie"),
-        ]
-        
-        for endpoint, media_type in endpoints:
-            try:
-                url = f"{self.API_URL}{endpoint}"
-                response = self.session.get(url, headers=self.headers)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for item in data:
-                        try:
-                            processed = self.process_item(item, media_type)
-                            results.append(processed)
-                        except:
-                            continue
-                    print(f"  {endpoint}: {len(data)} items")
-                elif response.status_code == 404:
-                    print(f"  {endpoint}: Not available")
-                
-            except Exception as e:
-                print(f"  [WARN] {endpoint} failed: {e}")
-        
+        # Define the endpoint based on media type
+        # Docs: "Genres API duplicates the urls of the Genres on the website"
+        # Website: https://simkl.com/anime/all/ -> API: /anime/genres/all
+        endpoint = f"/anime/genres/all" if media_type == "anime" else f"/movies/genres/all"
+
+        # Iterate by year to avoid deep pagination limits
+        for year in range(current_year, start_year - 1, -1):
+            page = 1
+            year_count = 0
+            
+            print(f"Processing {media_type.capitalize()} Year: {year}...")
+            
+            while True:
+                try:
+                    url = f"{self.API_URL}{endpoint}"
+                    params = {
+                        "year": year,
+                        "page": page,
+                        "limit": 50, # Max limit per docs usually 50
+                        # "sort": "rank" # Optional: sort by rank/popularity
+                    }
+                    
+                    response = self.session.get(url, headers=self.headers, params=params)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if not data:
+                            break # No more pages for this year
+                            
+                        # Process items
+                        for item in data:
+                            try:
+                                # For movies endpoint, type might be 'movie'
+                                # For anime endpoint, type might be 'tv', 'ova', etc.
+                                processed = self.process_item(item, media_type)
+                                results.append(processed)
+                                year_count += 1
+                            except Exception as e:
+                                # print(f"Error processing item: {e}")
+                                continue
+                        
+                        # Pagination Check
+                        # If we received fewer items than limit, we are on the last page
+                        if len(data) < 50:
+                            break
+                            
+                        page += 1
+                        time.sleep(self.get_rate_limit()) # Respect rate limit
+                        
+                    elif response.status_code == 429:
+                        print(f"  [!] Rate limit hit on page {page}. Sleeping 5s...")
+                        time.sleep(5)
+                        continue # Retry same page
+                    else:
+                        print(f"  [!] Error {response.status_code} on {url}")
+                        break
+                        
+                except Exception as e:
+                    print(f"  [!] Request failed: {e}")
+                    break
+            
+            print(f"  Finished {year}: found {year_count} items")
+            
         return results
-    
-    def scrape_genres(self) -> List[Dict[str, Any]]:
-        """Scrape by genre"""
-        print("\nScraping genres...")
-        results = []
-        
-        genres = [
-            "action", "adventure", "comedy", "drama", "fantasy",
-            "horror", "mystery", "romance", "sci-fi", "thriller",
-            "slice-of-life", "supernatural", "sports", "mecha"
-        ]
-        
-        for genre in genres:
-            try:
-                url = f"{self.API_URL}/anime/genres/{genre}"
-                response = self.session.get(url, headers=self.headers)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    count = 0
-                    for item in data[:100]:  # Limit per genre
-                        try:
-                            processed = self.process_item(item, 'anime')
-                            results.append(processed)
-                            count += 1
-                        except:
-                            continue
-                    print(f"  Genre '{genre}': {count} items")
-                
-            except Exception as e:
-                continue
-        
-        return results
-    
+
     def process_item(self, item: Dict[str, Any], media_type: str) -> Dict[str, Any]:
         """Process SIMKL item"""
         ids = item.get('ids', {})
@@ -133,14 +157,19 @@ class SIMKLAnimeScraper(BaseScraper):
             raise ValueError("No SIMKL ID")
         
         title = item.get('title', f"Unknown {simkl_id}")
-        item_type = item.get('type', media_type.upper())
+        
+        # Determine strict type
+        # For anime endpoint, simkl distinguishes 'tv', 'movie', 'ova' in 'anime_type' usually
+        # But 'type' field in response usually holds 'anime', 'movie', 'show'
+        # We want to preserve the specific anime type if available (ova, ona, etc)
+        item_type = item.get('anime_type') or item.get('type') or media_type
         
         external_ids = self.extract_external_ids(item)
         
         metadata = {
             "title": title,
             "year": item.get('year'),
-            "type": item.get('type'),
+            "type": item_type,
             "status": item.get('status'),
             "total_episodes": item.get('total_episodes'),
             "genres": item.get('genres', []),
