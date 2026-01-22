@@ -6,6 +6,7 @@ from typing import Dict, List, Any
 import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import time
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -32,10 +33,13 @@ class AnimeNewsNetworkScraper(BaseScraper):
         We'll use the reports.xml which gives us a list of anime IDs
         """
         print("Fetching anime list from ANN reports...")
+        print("This may take a long time due to rate limits (2s per request)\n")
+        
         results = []
         
         try:
             # Get the list of anime from reports
+            print("Step 1: Fetching anime ID list...")
             response = self.session.get(
                 f"{self.REPORTS_URL}?id=155&type=anime&nlist=all"
             )
@@ -45,22 +49,27 @@ class AnimeNewsNetworkScraper(BaseScraper):
                 return results
             
             # Parse the XML
+            print("Step 2: Parsing XML response...")
             root = ET.fromstring(response.content)
             
             # Extract all anime items
             items = root.findall('.//item')
             total = len(items)
-            print(f"Found {total} anime in reports\n")
+            print(f"✓ Found {total} anime IDs in reports\n")
+            
+            print("Step 3: Fetching details for each anime...")
+            print("Note: Rate limited to 1 request per 2 seconds\n")
             
             last_id = self.checkpoint.get("last_id", 0)
+            processed_count = 0
             
             for idx, item in enumerate(items, 1):
                 try:
-                    ann_id = item.find('id')
-                    if ann_id is None:
+                    ann_id_elem = item.find('id')
+                    if ann_id_elem is None:
                         continue
                     
-                    ann_id = int(ann_id.text)
+                    ann_id = int(ann_id_elem.text)
                     
                     # Skip if we've already processed this
                     if ann_id <= last_id:
@@ -70,17 +79,30 @@ class AnimeNewsNetworkScraper(BaseScraper):
                     processed = self.fetch_anime_details(ann_id)
                     if processed:
                         results.append(processed)
+                        processed_count += 1
                     
-                    if idx % 100 == 0:
-                        print(f"  Processed {idx}/{total} items ({idx/total*100:.1f}%)...")
-                        
-                        # Save checkpoint
+                    # Show progress more frequently
+                    if idx % 10 == 0:
+                        elapsed = idx * 2  # Rough estimate
+                        remaining = (total - idx) * 2
+                        print(f"  [{idx}/{total}] Processed {processed_count} items | "
+                              f"Elapsed: ~{elapsed//60}m | Remaining: ~{remaining//60}m")
+                    
+                    # Save checkpoint every 50 items
+                    if idx % 50 == 0:
                         self.checkpoint['last_id'] = ann_id
                         self.save_checkpoint(self.checkpoint)
+                        print(f"  ✓ Checkpoint saved at ID {ann_id}")
                     
                 except Exception as e:
-                    print(f"    [WARN] Failed to process item {idx}: {e}")
+                    print(f"  [WARN] Failed to process item {idx}: {e}")
                     continue
+            
+            # Final checkpoint
+            if items:
+                final_id = int(items[-1].find('id').text)
+                self.checkpoint['last_id'] = final_id
+                self.save_checkpoint(self.checkpoint)
             
             print(f"\n✓ Processed {len(results)} items")
             return results
