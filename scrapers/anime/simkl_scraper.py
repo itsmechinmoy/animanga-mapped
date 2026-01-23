@@ -21,7 +21,7 @@ class SIMKLAnimeScraper(BaseScraper):
     def __init__(self):
         super().__init__("simkl", "anime")
         # Hardcoded temp API key for testing
-        self.api_key = "3f0e5e44090724e73112649ebae18791e8e1ce7ed541ccc3896b9d236560ef02"
+        self.api_key = "d7992ccbb14990741c028c9127265ebe6009dbf074c6031297717c3e588f2053"
         
         self.headers = {
             "simkl-api-key": self.api_key
