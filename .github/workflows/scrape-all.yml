@@ -453,9 +453,10 @@ jobs:
           cd scraped-data/anime
           for file in *.json; do
             SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
-            if [ $SIZE -gt 52428800 ]; then  # 50MB
+            if [ $SIZE -gt 52428800 ]; then
               echo "Compressing $file ($(($SIZE / 1048576))MB)..."
-              gzip -9 "$file"
+              # ADD THE -f FLAG HERE
+              gzip -9f "$file"
               echo "  → ${file}.gz"
             fi
           done
@@ -544,9 +545,10 @@ jobs:
           cd scraped-data/manga
           for file in *.json; do
             SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
-            if [ $SIZE -gt 52428800 ]; then  # 50MB
+            if [ $SIZE -gt 52428800 ]; then
               echo "Compressing $file ($(($SIZE / 1048576))MB)..."
-              gzip -9 "$file"
+              # ADD THE -f FLAG HERE
+              gzip -9f "$file"
               echo "  → ${file}.gz"
             fi
           done
