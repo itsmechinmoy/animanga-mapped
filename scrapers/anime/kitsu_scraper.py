@@ -35,7 +35,6 @@ class KitsuAnimeScraper(BaseScraper):
 
         try:
             print("  Authenticating with Kitsu...")
-            # We use a direct post here, assuming session.post works, otherwise use requests
             response = self.session.post(
                 self.AUTH_URL,
                 json={
@@ -48,7 +47,6 @@ class KitsuAnimeScraper(BaseScraper):
 
             if response.status_code == 200:
                 token = response.json().get("access_token")
-                # Store header to use in scrape requests
                 self.auth_header = {"Authorization": f"Bearer {token}"}
                 print("  ✓ Authentication successful (NSFW content enabled)")
             else:
@@ -57,7 +55,7 @@ class KitsuAnimeScraper(BaseScraper):
             print(f"  [!] Authentication error: {e}")
 
     def get_rate_limit(self) -> float:
-        return 0.5  # 0.5 seconds between requests
+        return 0.5
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape Kitsu anime data"""
@@ -71,16 +69,15 @@ class KitsuAnimeScraper(BaseScraper):
         
         while True:
             try:
-                # Prepare headers
                 headers = {
                     "Accept": "application/vnd.api+json",
                     "Content-Type": "application/vnd.api+json"
                 }
-                # Add auth header if it exists
                 headers.update(self.auth_header)
 
+                # Added &include=mappings to fetch external IDs in the same request
                 response = self.session.get(
-                    f"{self.API_URL}?page[limit]={limit}&page[offset]={offset}",
+                    f"{self.API_URL}?page[limit]={limit}&page[offset]={offset}&include=mappings",
                     headers=headers
                 )
                 
@@ -95,6 +92,15 @@ class KitsuAnimeScraper(BaseScraper):
                 data = response.json()
                 items = data.get('data', [])
                 
+                # Create a lookup dict for mappings from the 'included' section
+                # Structure: { mapping_id: { externalSite, externalId } }
+                included = data.get('included', [])
+                mapping_lookup = {
+                    item['id']: item['attributes']
+                    for item in included
+                    if item.get('type') == 'mappings'
+                }
+                
                 if not items:
                     print("  No more items found")
                     break
@@ -103,16 +109,15 @@ class KitsuAnimeScraper(BaseScraper):
                 
                 for item in items:
                     try:
-                        processed = self.process_item(item)
+                        # Pass mapping_lookup to process_item
+                        processed = self.process_item(item, mapping_lookup)
                         results.append(processed)
                     except Exception as e:
                         print(f"    [WARN] Failed to process item: {e}")
                 
-                # Save checkpoint
                 self.checkpoint['offset'] = offset + limit
                 self.save_checkpoint(self.checkpoint)
                 
-                # Check if there's a next page
                 links = data.get('links', {})
                 if not links.get('next'):
                     print("\n✓ Reached last page")
@@ -128,7 +133,7 @@ class KitsuAnimeScraper(BaseScraper):
         
         return results
     
-    def process_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def process_item(self, item: Dict[str, Any], mapping_lookup: Dict[str, Any] = None) -> Dict[str, Any]:
         """Process Kitsu item"""
         kitsu_id = item['id']
         attrs = item.get('attributes', {})
@@ -136,7 +141,8 @@ class KitsuAnimeScraper(BaseScraper):
         title = attrs.get('canonicalTitle', attrs.get('titles', {}).get('en', f"Unknown {kitsu_id}"))
         item_type = attrs.get('subtype', attrs.get('showType', ''))
         
-        external_ids = self.extract_external_ids(item)
+        # Pass lookup to extract_external_ids
+        external_ids = self.extract_external_ids(item, mapping_lookup)
         
         metadata = {
             "titles": {
@@ -163,22 +169,36 @@ class KitsuAnimeScraper(BaseScraper):
         
         return self.format_item(kitsu_id, title, item_type, external_ids, metadata)
     
-    def extract_external_ids(self, item: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Extract external IDs from Kitsu item
-        Note: Kitsu doesn't provide external IDs directly in the main endpoint
-        These would need to be fetched from the mappings relationship
-        """
+    def extract_external_ids(self, item: Dict[str, Any], mapping_lookup: Dict[str, Any] = None) -> Dict[str, str]:
+        """Extract external IDs from Kitsu item using mapping lookup"""
         ids = {'kitsu': str(item['id'])}
         
-        # Check if mappings are included
-        relationships = item.get('relationships', {})
-        mappings_data = relationships.get('mappings', {})
+        if not mapping_lookup:
+            return ids
+
+        # Get the list of mapping relationship objects
+        # e.g. [{type: 'mappings', id: '26114'}, ...]
+        mappings_rel = item.get('relationships', {}).get('mappings', {}).get('data', [])
         
-        # If we have mapping data included, process it
-        if 'data' in mappings_data:
-            # This would require additional API calls or including mappings in the request
-            # For now, we'll leave this empty and rely on cross-referencing
-            pass
+        for mapping_ref in mappings_rel:
+            m_id = mapping_ref.get('id')
+            if m_id and m_id in mapping_lookup:
+                mapping_data = mapping_lookup[m_id]
+                site = mapping_data.get('externalSite')
+                ext_id = mapping_data.get('externalId')
+                
+                if not site or not ext_id:
+                    continue
+                
+                # Normalize site names to standard keys
+                if 'myanimelist' in site:
+                    ids['mal'] = str(ext_id)
+                elif 'anilist' in site:
+                    ids['anilist'] = str(ext_id)
+                elif 'anidb' in site:
+                    ids['anidb'] = str(ext_id)
+                elif 'thetvdb' in site:
+                    ids['thetvdb'] = str(ext_id)
+                # Add other mappings if needed
         
         return ids
