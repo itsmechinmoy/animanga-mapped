@@ -19,6 +19,8 @@ class KitsuMangaScraper(BaseScraper):
     AUTH_URL = "https://kitsu.io/api/oauth/token"
     
     def __init__(self):
+        # Initialize auth token as None before parent init
+        self.auth_header = {}
         super().__init__("kitsu", "manga")
         self._authenticate()
     
@@ -45,9 +47,8 @@ class KitsuMangaScraper(BaseScraper):
 
             if response.status_code == 200:
                 token = response.json().get("access_token")
-                self.session.headers.update({
-                    "Authorization": f"Bearer {token}"
-                })
+                # Store header to use in scrape requests
+                self.auth_header = {"Authorization": f"Bearer {token}"}
                 print("  ✓ Authentication successful (NSFW content enabled)")
             else:
                 print(f"  [!] Authentication failed (Status: {response.status_code}). Continuing as guest.")
@@ -69,12 +70,17 @@ class KitsuMangaScraper(BaseScraper):
         
         while True:
             try:
+                # Prepare headers
+                headers = {
+                    "Accept": "application/vnd.api+json",
+                    "Content-Type": "application/vnd.api+json"
+                }
+                # Add auth header if it exists
+                headers.update(self.auth_header)
+
                 response = self.session.get(
                     f"{self.API_URL}?page[limit]={limit}&page[offset]={offset}",
-                    headers={
-                        "Accept": "application/vnd.api+json",
-                        "Content-Type": "application/vnd.api+json"
-                    }
+                    headers=headers
                 )
                 
                 if response.status_code != 200:
