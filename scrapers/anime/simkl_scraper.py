@@ -1,5 +1,5 @@
 """
-SIMKL scraper using API with proper pagination
+SIMKL scraper using API with proper pagination via genres
 File: scrapers/anime/simkl_scraper.py
 """
 from typing import Dict, List, Any
@@ -32,18 +32,15 @@ class SIMKLAnimeScraper(BaseScraper):
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape SIMKL using API endpoints with proper pagination"""
-        if not self.api_key:
-            print("[!] Cannot scrape SIMKL without API key")
-            return []
-        
         print("Scraping SIMKL via API...")
-        print("Note: Using paginated endpoints for comprehensive data\n")
+        print("Using hardcoded API key for testing")
+        print("Note: Using paginated genre endpoints for comprehensive data\n")
         
         results = []
         
-        # Scrape anime and movies using paginated endpoints
-        results.extend(self.scrape_anime_all())
-        results.extend(self.scrape_movies_all())
+        # Scrape anime and movies using paginated genre endpoints
+        results.extend(self.scrape_anime_genres())
+        results.extend(self.scrape_movies_genres())
         
         # Deduplicate
         seen_ids = set()
@@ -57,135 +54,12 @@ class SIMKLAnimeScraper(BaseScraper):
         print(f"\n✓ Total unique items: {len(unique_results)}")
         return unique_results
     
-    def scrape_anime_all(self) -> List[Dict[str, Any]]:
-        """Scrape all anime using paginated /anime/all endpoint"""
-        print("Scraping all anime...")
-        results = []
-        page = 1
-        limit = 50  # Max per page
-        
-        while True:
-            try:
-                url = f"{self.API_URL}/anime/all"
-                params = {
-                    'page': page,
-                    'limit': limit
-                }
-                
-                response = self.session.get(url, headers=self.headers, params=params)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Check if we got any data
-                    if not data or len(data) == 0:
-                        print(f"  Reached end at page {page}")
-                        break
-                    
-                    # Process items
-                    for item in data:
-                        try:
-                            processed = self.process_item(item, 'anime')
-                            results.append(processed)
-                        except Exception as e:
-                            continue
-                    
-                    print(f"  Page {page}: {len(data)} items (total: {len(results)})")
-                    
-                    # Check pagination headers
-                    page_count = response.headers.get('X-Pagination-Page-Count')
-                    if page_count and page >= int(page_count):
-                        print(f"  Completed all {page_count} pages")
-                        break
-                    
-                    # If we got less than limit, we're done
-                    if len(data) < limit:
-                        print(f"  Last page reached (received {len(data)} < {limit})")
-                        break
-                    
-                    page += 1
-                    time.sleep(self.get_rate_limit())
-                    
-                elif response.status_code == 404:
-                    print(f"  Endpoint not available, trying alternative method")
-                    return self.scrape_anime_genres()
-                else:
-                    print(f"  Error {response.status_code} on page {page}")
-                    break
-                    
-            except Exception as e:
-                print(f"  [ERROR] Page {page} failed: {e}")
-                break
-        
-        return results
-    
-    def scrape_movies_all(self) -> List[Dict[str, Any]]:
-        """Scrape all movies using paginated /movies/all endpoint"""
-        print("\nScraping all movies...")
-        results = []
-        page = 1
-        limit = 50  # Max per page
-        
-        while True:
-            try:
-                url = f"{self.API_URL}/movies/all"
-                params = {
-                    'page': page,
-                    'limit': limit
-                }
-                
-                response = self.session.get(url, headers=self.headers, params=params)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Check if we got any data
-                    if not data or len(data) == 0:
-                        print(f"  Reached end at page {page}")
-                        break
-                    
-                    # Process items
-                    for item in data:
-                        try:
-                            processed = self.process_item(item, 'movie')
-                            results.append(processed)
-                        except Exception as e:
-                            continue
-                    
-                    print(f"  Page {page}: {len(data)} items (total: {len(results)})")
-                    
-                    # Check pagination headers
-                    page_count = response.headers.get('X-Pagination-Page-Count')
-                    if page_count and page >= int(page_count):
-                        print(f"  Completed all {page_count} pages")
-                        break
-                    
-                    # If we got less than limit, we're done
-                    if len(data) < limit:
-                        print(f"  Last page reached (received {len(data)} < {limit})")
-                        break
-                    
-                    page += 1
-                    time.sleep(self.get_rate_limit())
-                    
-                elif response.status_code == 404:
-                    print(f"  Endpoint not available, trying alternative method")
-                    return self.scrape_movies_genres()
-                else:
-                    print(f"  Error {response.status_code} on page {page}")
-                    break
-                    
-            except Exception as e:
-                print(f"  [ERROR] Page {page} failed: {e}")
-                break
-        
-        return results
-    
     def scrape_anime_genres(self) -> List[Dict[str, Any]]:
-        """Fallback: Scrape anime by genre with pagination"""
-        print("\nScraping anime by genres (fallback method)...")
+        """Scrape all anime using paginated genre endpoints"""
+        print("Scraping all anime via genres...")
         results = []
         
+        # Comprehensive list of anime genres
         genres = [
             "action", "adventure", "comedy", "drama", "fantasy",
             "horror", "mystery", "romance", "sci-fi", "thriller",
@@ -193,12 +67,15 @@ class SIMKLAnimeScraper(BaseScraper):
             "psychological", "ecchi", "harem", "josei", "kids",
             "magic", "martial-arts", "military", "music", "parody",
             "police", "school", "seinen", "shoujo", "shounen",
-            "space", "super-power", "vampire", "historical"
+            "space", "super-power", "vampire", "historical",
+            "dementia", "demons", "game", "samurai"
         ]
+        
+        total_anime = 0
         
         for genre in genres:
             page = 1
-            limit = 50
+            limit = 50  # Max items per page
             genre_total = 0
             
             while True:
@@ -209,9 +86,12 @@ class SIMKLAnimeScraper(BaseScraper):
                     
                     if response.status_code == 200:
                         data = response.json()
+                        
+                        # Break if no data
                         if not data or len(data) == 0:
                             break
                         
+                        # Process items
                         for item in data:
                             try:
                                 processed = self.process_item(item, 'anime')
@@ -220,37 +100,57 @@ class SIMKLAnimeScraper(BaseScraper):
                             except:
                                 continue
                         
+                        # Check pagination headers
+                        page_count = response.headers.get('X-Pagination-Page-Count')
+                        
+                        # Break if we got less than limit (last page)
                         if len(data) < limit:
+                            break
+                        
+                        # Break if we've reached max pages
+                        if page_count and page >= int(page_count):
                             break
                         
                         page += 1
                         time.sleep(self.get_rate_limit())
+                        
+                    elif response.status_code == 404:
+                        # Genre doesn't exist, skip
+                        break
                     else:
+                        print(f"  [WARN] Genre '{genre}' page {page}: HTTP {response.status_code}")
                         break
                         
-                except Exception:
+                except Exception as e:
+                    print(f"  [ERROR] Genre '{genre}' page {page}: {e}")
                     break
             
             if genre_total > 0:
-                print(f"  Genre '{genre}': {genre_total} items")
+                total_anime += genre_total
+                print(f"  Genre '{genre}': {genre_total} items (total anime: {total_anime})")
         
+        print(f"\n✓ Total anime scraped: {len(results)}")
         return results
     
     def scrape_movies_genres(self) -> List[Dict[str, Any]]:
-        """Fallback: Scrape movies by genre with pagination"""
-        print("\nScraping movies by genres (fallback method)...")
+        """Scrape all movies using paginated genre endpoints"""
+        print("\nScraping all movies via genres...")
         results = []
         
+        # Comprehensive list of movie genres
         genres = [
             "action", "adventure", "animation", "comedy", "crime",
             "documentary", "drama", "family", "fantasy", "history",
             "horror", "music", "mystery", "romance", "science-fiction",
-            "thriller", "tv-movie", "war", "western"
+            "thriller", "tv-movie", "war", "western", "biography",
+            "sport", "film-noir"
         ]
+        
+        total_movies = 0
         
         for genre in genres:
             page = 1
-            limit = 50
+            limit = 50  # Max items per page
             genre_total = 0
             
             while True:
@@ -261,9 +161,12 @@ class SIMKLAnimeScraper(BaseScraper):
                     
                     if response.status_code == 200:
                         data = response.json()
+                        
+                        # Break if no data
                         if not data or len(data) == 0:
                             break
                         
+                        # Process items
                         for item in data:
                             try:
                                 processed = self.process_item(item, 'movie')
@@ -272,20 +175,36 @@ class SIMKLAnimeScraper(BaseScraper):
                             except:
                                 continue
                         
+                        # Check pagination headers
+                        page_count = response.headers.get('X-Pagination-Page-Count')
+                        
+                        # Break if we got less than limit (last page)
                         if len(data) < limit:
+                            break
+                        
+                        # Break if we've reached max pages
+                        if page_count and page >= int(page_count):
                             break
                         
                         page += 1
                         time.sleep(self.get_rate_limit())
+                        
+                    elif response.status_code == 404:
+                        # Genre doesn't exist, skip
+                        break
                     else:
+                        print(f"  [WARN] Genre '{genre}' page {page}: HTTP {response.status_code}")
                         break
                         
-                except Exception:
+                except Exception as e:
+                    print(f"  [ERROR] Genre '{genre}' page {page}: {e}")
                     break
             
             if genre_total > 0:
-                print(f"  Genre '{genre}': {genre_total} items")
+                total_movies += genre_total
+                print(f"  Genre '{genre}': {genre_total} items (total movies: {total_movies})")
         
+        print(f"\n✓ Total movies scraped: {len(results)}")
         return results
     
     def process_item(self, item: Dict[str, Any], media_type: str) -> Dict[str, Any]:
