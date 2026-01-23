@@ -1,12 +1,13 @@
 """
-SIMKL scraper using API with proper pagination via genres
+SIMKL scraper using anime-offline-database
+Gets 14,253+ SIMKL entries with full cross-references
 File: scrapers/anime/simkl_scraper.py
 """
 from typing import Dict, List, Any
 import sys
 from pathlib import Path
-import os
-import time
+import json
+import re
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -14,240 +15,181 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from scrapers.base_scraper import BaseScraper
 
 class SIMKLAnimeScraper(BaseScraper):
-    """Scraper for SIMKL API (requires API key)"""
+    """Scraper for SIMKL using anime-offline-database"""
     
-    API_URL = "https://api.simkl.com"
+    # Use the minified version for faster download
+    DATABASE_URL = "https://github.com/manami-project/anime-offline-database/releases/latest/download/anime-offline-database-minified.json"
     
     def __init__(self):
         super().__init__("simkl", "anime")
-        # Hardcoded temp API key for testing
-        self.api_key = "d7992ccbb14990741c028c9127265ebe6009dbf074c6031297717c3e588f2053"
-        
-        self.headers = {
-            "simkl-api-key": self.api_key
-        }
     
     def get_rate_limit(self) -> float:
-        return 0.5
+        return 1.0
     
     def scrape(self) -> List[Dict[str, Any]]:
-        """Scrape SIMKL using API endpoints with proper pagination"""
-        print("Scraping SIMKL via API...")
-        print("Using hardcoded API key for testing")
-        print("Note: Using paginated genre endpoints for comprehensive data\n")
+        """Scrape SIMKL data from anime-offline-database"""
+        print("="*70)
+        print("SIMKL SCRAPER - Using anime-offline-database")
+        print("="*70)
+        print("Fetching anime-offline-database from GitHub releases...")
+        print("This may take a moment (downloading ~40,000 entries)...\n")
         
-        results = []
-        
-        # Scrape anime and movies using paginated genre endpoints
-        results.extend(self.scrape_anime_genres())
-        results.extend(self.scrape_movies_genres())
-        
-        # Deduplicate
-        seen_ids = set()
-        unique_results = []
-        for item in results:
-            simkl_id = item.get('id')
-            if simkl_id and simkl_id not in seen_ids:
-                seen_ids.add(simkl_id)
-                unique_results.append(item)
-        
-        print(f"\n✓ Total unique items: {len(unique_results)}")
-        return unique_results
-    
-    def scrape_anime_genres(self) -> List[Dict[str, Any]]:
-        """Scrape all anime using paginated genre endpoints"""
-        print("Scraping all anime via genres...")
-        results = []
-        
-        # Comprehensive list of anime genres
-        genres = [
-            "action", "adventure", "comedy", "drama", "fantasy",
-            "horror", "mystery", "romance", "sci-fi", "thriller",
-            "slice-of-life", "supernatural", "sports", "mecha",
-            "psychological", "ecchi", "harem", "josei", "kids",
-            "magic", "martial-arts", "military", "music", "parody",
-            "police", "school", "seinen", "shoujo", "shounen",
-            "space", "super-power", "vampire", "historical",
-            "dementia", "demons", "game", "samurai"
-        ]
-        
-        total_anime = 0
-        
-        for genre in genres:
-            page = 1
-            limit = 50  # Max items per page
-            genre_total = 0
+        try:
+            response = self.session.get(self.DATABASE_URL)
             
-            while True:
+            if response.status_code != 200:
+                raise Exception(f"Failed to fetch database: {response.status_code}")
+            
+            print("✓ Downloaded successfully")
+            print("Parsing JSON...")
+            
+            database = response.json()
+            all_anime = database.get('data', [])
+            
+            print(f"✓ Loaded {len(all_anime)} total anime entries")
+            print(f"Database last updated: {database.get('lastUpdate', 'unknown')}\n")
+            
+            results = []
+            simkl_count = 0
+            
+            print("Extracting SIMKL entries...")
+            
+            for idx, anime in enumerate(all_anime, 1):
                 try:
-                    url = f"{self.API_URL}/anime/genres/{genre}"
-                    params = {'page': page, 'limit': limit}
-                    response = self.session.get(url, headers=self.headers, params=params)
+                    # Find SIMKL URL in sources
+                    simkl_url = self.find_simkl_source(anime.get('sources', []))
                     
-                    if response.status_code == 200:
-                        data = response.json()
-                        
-                        # Break if no data
-                        if not data or len(data) == 0:
-                            break
-                        
-                        # Process items
-                        for item in data:
-                            try:
-                                processed = self.process_item(item, 'anime')
-                                results.append(processed)
-                                genre_total += 1
-                            except:
-                                continue
-                        
-                        # Check pagination headers
-                        page_count = response.headers.get('X-Pagination-Page-Count')
-                        
-                        # Break if we got less than limit (last page)
-                        if len(data) < limit:
-                            break
-                        
-                        # Break if we've reached max pages
-                        if page_count and page >= int(page_count):
-                            break
-                        
-                        page += 1
-                        time.sleep(self.get_rate_limit())
-                        
-                    elif response.status_code == 404:
-                        # Genre doesn't exist, skip
-                        break
-                    else:
-                        print(f"  [WARN] Genre '{genre}' page {page}: HTTP {response.status_code}")
-                        break
-                        
-                except Exception as e:
-                    print(f"  [ERROR] Genre '{genre}' page {page}: {e}")
-                    break
-            
-            if genre_total > 0:
-                total_anime += genre_total
-                print(f"  Genre '{genre}': {genre_total} items (total anime: {total_anime})")
-        
-        print(f"\n✓ Total anime scraped: {len(results)}")
-        return results
-    
-    def scrape_movies_genres(self) -> List[Dict[str, Any]]:
-        """Scrape all movies using paginated genre endpoints"""
-        print("\nScraping all movies via genres...")
-        results = []
-        
-        # Comprehensive list of movie genres
-        genres = [
-            "action", "adventure", "animation", "comedy", "crime",
-            "documentary", "drama", "family", "fantasy", "history",
-            "horror", "music", "mystery", "romance", "science-fiction",
-            "thriller", "tv-movie", "war", "western", "biography",
-            "sport", "film-noir"
-        ]
-        
-        total_movies = 0
-        
-        for genre in genres:
-            page = 1
-            limit = 50  # Max items per page
-            genre_total = 0
-            
-            while True:
-                try:
-                    url = f"{self.API_URL}/movies/genres/{genre}"
-                    params = {'page': page, 'limit': limit}
-                    response = self.session.get(url, headers=self.headers, params=params)
+                    if not simkl_url:
+                        continue
                     
-                    if response.status_code == 200:
-                        data = response.json()
-                        
-                        # Break if no data
-                        if not data or len(data) == 0:
-                            break
-                        
-                        # Process items
-                        for item in data:
-                            try:
-                                processed = self.process_item(item, 'movie')
-                                results.append(processed)
-                                genre_total += 1
-                            except:
-                                continue
-                        
-                        # Check pagination headers
-                        page_count = response.headers.get('X-Pagination-Page-Count')
-                        
-                        # Break if we got less than limit (last page)
-                        if len(data) < limit:
-                            break
-                        
-                        # Break if we've reached max pages
-                        if page_count and page >= int(page_count):
-                            break
-                        
-                        page += 1
-                        time.sleep(self.get_rate_limit())
-                        
-                    elif response.status_code == 404:
-                        # Genre doesn't exist, skip
-                        break
-                    else:
-                        print(f"  [WARN] Genre '{genre}' page {page}: HTTP {response.status_code}")
-                        break
-                        
+                    # Extract SIMKL ID from URL
+                    simkl_id = self.extract_simkl_id(simkl_url)
+                    if not simkl_id:
+                        continue
+                    
+                    simkl_count += 1
+                    
+                    # Extract all external IDs
+                    external_ids = self.extract_external_ids(anime.get('sources', []))
+                    external_ids['simkl'] = simkl_id
+                    
+                    # Build metadata
+                    metadata = {
+                        "title": anime.get('title'),
+                        "type": anime.get('type'),
+                        "episodes": anime.get('episodes'),
+                        "status": anime.get('status'),
+                        "synonyms": anime.get('synonyms', []),
+                        "picture": anime.get('picture'),
+                        "thumbnail": anime.get('thumbnail'),
+                        "year": anime.get('animeSeason', {}).get('year'),
+                        "season": anime.get('animeSeason', {}).get('season'),
+                        "studios": anime.get('studios', []),
+                        "producers": anime.get('producers', []),
+                        "tags": anime.get('tags', []),
+                        "score": anime.get('score'),
+                        "duration": anime.get('duration'),
+                    }
+                    
+                    item = self.format_item(
+                        item_id=simkl_id,
+                        title=anime.get('title', f'Unknown {simkl_id}'),
+                        item_type=anime.get('type', 'UNKNOWN'),
+                        external_ids=external_ids,
+                        metadata=metadata
+                    )
+                    
+                    results.append(item)
+                    
+                    if simkl_count % 500 == 0:
+                        print(f"  Found {simkl_count} SIMKL entries so far...")
+                
                 except Exception as e:
-                    print(f"  [ERROR] Genre '{genre}' page {page}: {e}")
-                    break
+                    continue
             
-            if genre_total > 0:
-                total_movies += genre_total
-                print(f"  Genre '{genre}': {genre_total} items (total movies: {total_movies})")
-        
-        print(f"\n✓ Total movies scraped: {len(results)}")
-        return results
+            print(f"\n{'='*70}")
+            print(f"✓ Total SIMKL entries extracted: {len(results)}")
+            print(f"✓ Coverage: {simkl_count}/{len(all_anime)} entries have SIMKL IDs")
+            print("="*70)
+            
+            return results
+            
+        except Exception as e:
+            print(f"\n[ERROR] Failed to scrape: {e}")
+            raise
     
-    def process_item(self, item: Dict[str, Any], media_type: str) -> Dict[str, Any]:
-        """Process SIMKL item"""
-        ids = item.get('ids', {})
-        simkl_id = ids.get('simkl') or ids.get('simkl_id')
-        
-        if not simkl_id:
-            raise ValueError("No SIMKL ID")
-        
-        title = item.get('title', f"Unknown {simkl_id}")
-        item_type = item.get('type', media_type.upper())
-        
-        external_ids = self.extract_external_ids(item)
-        
-        metadata = {
-            "title": title,
-            "year": item.get('year'),
-            "type": item.get('type'),
-            "status": item.get('status'),
-            "total_episodes": item.get('total_episodes'),
-            "genres": item.get('genres', []),
-            "ratings": item.get('ratings'),
-        }
-        
-        return self.format_item(simkl_id, title, item_type, external_ids, metadata)
+    def find_simkl_source(self, sources: List[str]) -> str:
+        """Find SIMKL URL in sources list"""
+        for source in sources:
+            if 'simkl.com' in source:
+                return source
+        return ""
     
-    def extract_external_ids(self, item: Dict[str, Any]) -> Dict[str, str]:
-        """Extract external IDs"""
-        ids = item.get('ids', {})
-        external_ids = {'simkl': str(ids.get('simkl') or ids.get('simkl_id', ''))}
+    def extract_simkl_id(self, url: str) -> str:
+        """Extract SIMKL ID from URL"""
+        # URL format: https://simkl.com/anime/40190
+        match = re.search(r'simkl\.com/(?:anime|tv|movies?)/(\d+)', url)
+        if match:
+            return match.group(1)
+        return ""
+    
+    def extract_external_ids(self, sources: List[str]) -> Dict[str, str]:
+        """Extract all external IDs from sources"""
+        ids = {}
         
-        if ids.get('mal'):
-            external_ids['mal'] = str(ids['mal'])
-        if ids.get('anilist'):
-            external_ids['anilist'] = str(ids['anilist'])
-        if ids.get('anidb'):
-            external_ids['anidb'] = str(ids['anidb'])
-        if ids.get('tmdb'):
-            external_ids['themoviedb'] = str(ids['tmdb'])
-        if ids.get('imdb'):
-            external_ids['imdb'] = ids['imdb']
-        if ids.get('tvdb'):
-            external_ids['tvdb'] = str(ids['tvdb'])
+        for source in sources:
+            # MyAnimeList
+            if 'myanimelist.net' in source:
+                match = re.search(r'myanimelist\.net/anime/(\d+)', source)
+                if match:
+                    ids['mal'] = match.group(1)
+            
+            # AniList
+            elif 'anilist.co' in source:
+                match = re.search(r'anilist\.co/anime/(\d+)', source)
+                if match:
+                    ids['anilist'] = match.group(1)
+            
+            # AniDB
+            elif 'anidb.net' in source:
+                match = re.search(r'anidb\.net/anime/(\d+)', source)
+                if match:
+                    ids['anidb'] = match.group(1)
+            
+            # Kitsu
+            elif 'kitsu.app' in source or 'kitsu.io' in source:
+                match = re.search(r'kitsu\.(?:app|io)/anime/(\d+)', source)
+                if match:
+                    ids['kitsu'] = match.group(1)
+            
+            # TVDB (from animecountdown which uses TVDB IDs)
+            elif 'animecountdown.com' in source:
+                match = re.search(r'animecountdown\.com/(\d+)', source)
+                if match:
+                    ids['tvdb'] = match.group(1)
+            
+            # LiveChart
+            elif 'livechart.me' in source:
+                match = re.search(r'livechart\.me/anime/(\d+)', source)
+                if match:
+                    ids['livechart'] = match.group(1)
+            
+            # Anime-Planet
+            elif 'anime-planet.com' in source:
+                match = re.search(r'anime-planet\.com/anime/([\w-]+)', source)
+                if match:
+                    ids['animeplanet'] = match.group(1)
+            
+            # AniSearch
+            elif 'anisearch.com' in source:
+                match = re.search(r'anisearch\.com/anime/(\d+)', source)
+                if match:
+                    ids['anisearch'] = match.group(1)
+            
+            # Anime News Network
+            elif 'animenewsnetwork.com' in source:
+                match = re.search(r'id=(\d+)', source)
+                if match:
+                    ids['ann'] = match.group(1)
         
-        return external_ids
+        return ids
