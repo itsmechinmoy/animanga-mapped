@@ -1,5 +1,5 @@
 """
-SIMKL scraper using API only (Optimized with Key Rotation & Smart Pagination)
+SIMKL scraper using API only (Fixed Key Rotation & Exception Handling)
 File: scrapers/anime/simkl_scraper.py
 """
 from typing import Dict, List, Any
@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 import time
 import datetime
+import requests # Required to catch the 412 Exception
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -29,17 +30,15 @@ class SIMKLAnimeScraper(BaseScraper):
         super().__init__("simkl", "anime")
         
         # KEY ROTATION SYSTEM
-        # We load the Env Var, plus the backup key you provided
-        env_key = os.getenv("SIMKL_CLIENT_ID")
         self.api_keys = []
         
-        if env_key:
-            self.api_keys.append(env_key)
+        # 1. Add "Scrape 2" Key FIRST (Since Key 1 is likely exhausted today)
+        self.api_keys.append("3f0e5e44090724e73112649ebae18791e8e1ce7ed541ccc3896b9d236560ef02")
         
-        # Add the 'scrape 2' key as backup
-        backup_key = "3f0e5e44090724e73112649ebae18791e8e1ce7ed541ccc3896b9d236560ef02"
-        if backup_key not in self.api_keys:
-            self.api_keys.append(backup_key)
+        # 2. Add Env Key (Original) as Backup
+        env_key = os.getenv("SIMKL_CLIENT_ID")
+        if env_key and env_key not in self.api_keys:
+            self.api_keys.append(env_key)
             
         self.current_key_index = 0
         self.seen_ids = set()
@@ -48,8 +47,10 @@ class SIMKLAnimeScraper(BaseScraper):
     def get_current_headers(self):
         if not self.api_keys:
             return {}
+        # Mask key in logs
+        key = self.api_keys[self.current_key_index]
         return {
-            "simkl-api-key": self.api_keys[self.current_key_index],
+            "simkl-api-key": key,
             "Content-Type": "application/json"
         }
     
@@ -57,15 +58,15 @@ class SIMKLAnimeScraper(BaseScraper):
         """Switches to the next API key if available"""
         if self.current_key_index + 1 < len(self.api_keys):
             self.current_key_index += 1
-            print(f"  [♻️] 412 Limit Hit. Rotating to API Key #{self.current_key_index + 1}...")
+            print(f"  [♻️] Limit Hit (412). Rotating to API Key #{self.current_key_index + 1}...")
             return True
         else:
-            print(f"  [⛔] All API keys exhausted (412). Stopping script.")
+            print(f"  [⛔] All {len(self.api_keys)} API keys exhausted. Stopping script.")
             self.stop_scraping = True
             return False
 
     def get_rate_limit(self) -> float:
-        return 1.2
+        return 1.5
     
     def scrape(self) -> List[Dict[str, Any]]:
         if not self.api_keys:
@@ -75,12 +76,12 @@ class SIMKLAnimeScraper(BaseScraper):
         print(f"Scraping SIMKL via API (Keys available: {len(self.api_keys)})...")
         results = []
         
-        # 1. Scrape Anime (Use Efficient Mode: Try 'All' first, split only if needed)
+        # 1. Scrape Anime 
         if not self.stop_scraping:
             print("\n--- Scraping Anime Catalog ---")
             results.extend(self.scrape_catalog("anime", efficient_mode=True))
 
-        # 2. Scrape Movies (Movies are huge, efficient mode might fail often, but worth trying)
+        # 2. Scrape Movies
         if not self.stop_scraping:
             print("\n--- Scraping Movies Catalog ---")
             results.extend(self.scrape_catalog("movies", efficient_mode=True))
@@ -102,15 +103,15 @@ class SIMKLAnimeScraper(BaseScraper):
             
             # --- STRATEGY 1: Efficient Mode (Grab everything for the year) ---
             if efficient_mode:
-                # Returns True if fully scraped, False if we hit a limit/too many items
+                # Returns True if fully scraped
                 success = self.scrape_genre_endpoint(base_endpoint, "all", year, media_type, results, check_limit=True)
                 
                 if success:
-                    # If successful, we don't need to loop genres. We got it all.
-                    continue
+                    continue # Success! Move to next year
                 elif self.stop_scraping:
                     break
                 else:
+                    # Only print fallback if we are NOT stopping (meaning 412 wasn't the cause, but pagination depth was)
                     print(f"  [!] 'All' contained too many items (>1000). Splitting by Genre...")
 
             # --- STRATEGY 2: Fallback (Split by Genre) ---
@@ -121,10 +122,6 @@ class SIMKLAnimeScraper(BaseScraper):
         return results
 
     def scrape_genre_endpoint(self, base_endpoint, genre, year, media_type, results_list, check_limit=False) -> bool:
-        """
-        Scrapes a specific endpoint. 
-        If check_limit=True, it aborts if it detects page > 20 (Simkl Limit), returning False.
-        """
         page = 1
         items_found = 0
         
@@ -134,25 +131,26 @@ class SIMKLAnimeScraper(BaseScraper):
             try:
                 url = f"{self.API_URL}{base_endpoint}/{genre}"
                 params = {
-                    "release": year, # The critical fix: 'release' not 'year'
+                    "release": year,
                     "page": page,
                     "limit": 50,
                     "sort": "rank"
                 }
                 
-                # Use current key headers
                 response = self.session.get(url, headers=self.get_current_headers(), params=params)
+                
+                # Manually raise for status to trigger the exception block for 4xx errors
+                response.raise_for_status()
                 
                 if response.status_code == 200:
                     data = response.json()
                     
                     if not data:
-                        break # End of pages
+                        break 
                     
-                    # Safety: Check if API ignored the 'release' filter
+                    # Filter Integrity Check
                     if data[0].get('year') and abs(data[0]['year'] - year) > 2:
-                         # API returned 1990 items for 2024 request. Filter broken.
-                        return False
+                        return False # API ignored filter
 
                     for item in data:
                         try:
@@ -165,36 +163,42 @@ class SIMKLAnimeScraper(BaseScraper):
                         except:
                             continue
                     
-                    # Pagination Logic
                     if len(data) < 50:
-                        break # Last page reached naturally
+                        break 
                     
-                    # LIMIT CHECK: Simkl generally 412s if page > 20 (1000 items)
-                    # If we are in "Efficient Mode" (genre='all') and hit Page 19,
-                    # we should stop and tell the main loop to use Genres instead.
+                    # Simkl Depth Limit Check
                     if check_limit and page >= 18:
                         return False 
                         
                     page += 1
                     time.sleep(self.get_rate_limit())
-                    
-                elif response.status_code == 404:
-                    return True # Genre empty, technically success
-                
-                elif response.status_code == 412:
-                    # If we hit 412, try rotating keys
-                    if self.rotate_key():
-                        # Retry the exact same request with new key
-                        continue 
-                    else:
-                        return False
 
-                elif response.status_code == 429:
+            except requests.exceptions.HTTPError as e:
+                # THIS IS THE FIX: Catch the 412 here
+                if e.response.status_code == 412:
+                    # If using "all" genre and hitting 412, it might just be deep pagination limits
+                    # But if it happens on Page 1, it's definitely a Dead Key.
+                    if page == 1:
+                        if self.rotate_key():
+                            continue # Retry exact same request with new key
+                        else:
+                            return False
+                    else:
+                        # 412 on deep page -> Limit hit, switch strategies if 'all', or stop if 'genre'
+                        if genre == "all": return False
+                        else: 
+                            if self.rotate_key(): continue
+                            else: return False
+
+                elif e.response.status_code == 404:
+                    return True # Genre empty
+                
+                elif e.response.status_code == 429:
                     print(f"  [!] 429 Too Many Requests. Sleeping 10s...")
                     time.sleep(10)
-                    continue 
+                    continue
                 else:
-                    print(f"  [!] Error {response.status_code} on {url}")
+                    print(f"  [!] HTTP Error {e.response.status_code} on {url}")
                     return False
                     
             except Exception as e:
