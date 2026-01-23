@@ -437,6 +437,9 @@ jobs:
           find artifacts -name "*.json" -exec cp {} scraped-data/anime/ \;
           ls -la scraped-data/anime/
        
+      - name: Run anime mapper
+        run: python scripts/run_mapper.py --type anime
+       
       - name: Compress large JSON files (>50MB)
         run: |
           cd scraped-data/anime
@@ -450,9 +453,6 @@ jobs:
           done
           cd ../..
           ls -lh scraped-data/anime/
-       
-      - name: Run anime mapper
-        run: python scripts/run_mapper.py --type anime
        
       - name: Commit all anime data (service files + mapped)
         run: |
@@ -528,6 +528,9 @@ jobs:
           find artifacts -name "*.json" -exec cp {} scraped-data/manga/ \;
           ls -la scraped-data/manga/
       
+      - name: Run manga mapper
+        run: python scripts/run_mapper.py --type manga
+      
       - name: Compress large JSON files (>50MB)
         run: |
           cd scraped-data/manga
@@ -541,9 +544,6 @@ jobs:
           done
           cd ../..
           ls -lh scraped-data/manga/
-      
-      - name: Run manga mapper
-        run: python scripts/run_mapper.py --type manga
       
       - name: Commit manga data (compressed large files)
         run: |
