@@ -165,16 +165,23 @@ class MangaMapper:
                     field_name = self.FIELD_MAP.get(service)
                     if field_name:
                         try:
+                            # STRICTLY enforce integers for IDs
                             item[field_name] = int(service_id)
                         except (ValueError, TypeError):
-                            item[field_name] = str(service_id)
+                            # If conversion fails, ignore this ID entirely
+                            # This prevents strings from entering the final data and breaking the sort
+                            # print(f"  [WARN] Ignored invalid non-numeric ID for {service}: {service_id}")
+                            pass
                 
-                final_list.append(item)
+                # Only add item if it has at least one valid ID
+                if any(k in item for k in self.FIELD_MAP.values()):
+                    final_list.append(item)
             
             except Exception as e:
                 print(f"  [WARN] Failed to merge {primary_key}: {e}")
         
         # Sort by AniList ID
+        # Now safe because anilist_id is guaranteed to be int or None
         final_list.sort(key=lambda x: (
             x.get('anilist_id') is None,
             x.get('anilist_id', 999999999)
