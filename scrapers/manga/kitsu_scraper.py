@@ -57,7 +57,8 @@ class KitsuMangaScraper(BaseScraper):
                     print("  No more items found")
                     break
                 
-                print(f"  Offset {offset} - {len(items)} items")
+                nsfw_count = sum(1 for item in items if item.get('attributes', {}).get('nsfw'))
+                print(f"  Offset {offset} - {len(items)} items ({nsfw_count} NSFW)")
                 
                 for item in items:
                     try:
@@ -83,6 +84,9 @@ class KitsuMangaScraper(BaseScraper):
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
                     break
+        
+        total_nsfw = sum(1 for item in results if item.get('metadata', {}).get('nsfw'))
+        print(f"\n✓ Total items scraped: {len(results)} ({total_nsfw} NSFW)")
         
         return results
     
@@ -116,7 +120,8 @@ class KitsuMangaScraper(BaseScraper):
             "rating_rank": attrs.get('ratingRank'),
             "age_rating": attrs.get('ageRating'),
             "age_rating_guide": attrs.get('ageRatingGuide'),
-            "serialization": attrs.get('serialization')
+            "serialization": attrs.get('serialization'),
+            "nsfw": attrs.get('nsfw', False)
         }
         
         return self.format_item(kitsu_id, title, item_type, external_ids, metadata)
