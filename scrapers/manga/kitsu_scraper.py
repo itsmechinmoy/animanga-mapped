@@ -47,7 +47,6 @@ class KitsuMangaScraper(BaseScraper):
 
             if response.status_code == 200:
                 token = response.json().get("access_token")
-                # Store header to use in scrape requests
                 self.auth_header = {"Authorization": f"Bearer {token}"}
                 print("  ✓ Authentication successful (NSFW content enabled)")
             else:
@@ -56,7 +55,7 @@ class KitsuMangaScraper(BaseScraper):
             print(f"  [!] Authentication error: {e}")
     
     def get_rate_limit(self) -> float:
-        return 0.5  # 0.5 seconds between requests
+        return 0.5
     
     def scrape(self) -> List[Dict[str, Any]]:
         """Scrape Kitsu manga data"""
@@ -70,16 +69,15 @@ class KitsuMangaScraper(BaseScraper):
         
         while True:
             try:
-                # Prepare headers
                 headers = {
                     "Accept": "application/vnd.api+json",
                     "Content-Type": "application/vnd.api+json"
                 }
-                # Add auth header if it exists
                 headers.update(self.auth_header)
 
+                # Added &include=mappings to fetch external IDs
                 response = self.session.get(
-                    f"{self.API_URL}?page[limit]={limit}&page[offset]={offset}",
+                    f"{self.API_URL}?page[limit]={limit}&page[offset]={offset}&include=mappings",
                     headers=headers
                 )
                 
@@ -94,6 +92,14 @@ class KitsuMangaScraper(BaseScraper):
                 data = response.json()
                 items = data.get('data', [])
                 
+                # Create mappings lookup from 'included' section
+                included = data.get('included', [])
+                mapping_lookup = {
+                    item['id']: item['attributes']
+                    for item in included
+                    if item.get('type') == 'mappings'
+                }
+                
                 if not items:
                     print("  No more items found")
                     break
@@ -102,16 +108,14 @@ class KitsuMangaScraper(BaseScraper):
                 
                 for item in items:
                     try:
-                        processed = self.process_item(item)
+                        processed = self.process_item(item, mapping_lookup)
                         results.append(processed)
                     except Exception as e:
                         print(f"    [WARN] Failed to process item: {e}")
                 
-                # Save checkpoint
                 self.checkpoint['offset'] = offset + limit
                 self.save_checkpoint(self.checkpoint)
                 
-                # Check if there's a next page
                 links = data.get('links', {})
                 if not links.get('next'):
                     print("\n✓ Reached last page")
@@ -127,7 +131,7 @@ class KitsuMangaScraper(BaseScraper):
         
         return results
     
-    def process_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def process_item(self, item: Dict[str, Any], mapping_lookup: Dict[str, Any] = None) -> Dict[str, Any]:
         """Process Kitsu manga item"""
         kitsu_id = item['id']
         attrs = item.get('attributes', {})
@@ -135,7 +139,8 @@ class KitsuMangaScraper(BaseScraper):
         title = attrs.get('canonicalTitle', attrs.get('titles', {}).get('en', f"Unknown {kitsu_id}"))
         item_type = attrs.get('subtype', attrs.get('mangaType', ''))
         
-        external_ids = self.extract_external_ids(item)
+        # Pass lookup to extract_external_ids
+        external_ids = self.extract_external_ids(item, mapping_lookup)
         
         metadata = {
             "titles": {
@@ -162,11 +167,31 @@ class KitsuMangaScraper(BaseScraper):
         
         return self.format_item(kitsu_id, title, item_type, external_ids, metadata)
     
-    def extract_external_ids(self, item: Dict[str, Any]) -> Dict[str, str]:
+    def extract_external_ids(self, item: Dict[str, Any], mapping_lookup: Dict[str, Any] = None) -> Dict[str, str]:
         """Extract external IDs from Kitsu manga item"""
         ids = {'kitsu': str(item['id'])}
         
-        # Kitsu doesn't provide external IDs directly
-        # These would need to be fetched from mappings
+        if not mapping_lookup:
+            return ids
+            
+        # Get mapping relationships
+        mappings_rel = item.get('relationships', {}).get('mappings', {}).get('data', [])
+        
+        for mapping_ref in mappings_rel:
+            m_id = mapping_ref.get('id')
+            if m_id and m_id in mapping_lookup:
+                mapping_data = mapping_lookup[m_id]
+                site = mapping_data.get('externalSite')
+                ext_id = mapping_data.get('externalId')
+                
+                if not site or not ext_id:
+                    continue
+                    
+                # Normalize site names to standard keys
+                # Kitsu returns 'myanimelist/manga', 'anilist', 'mangaupdates', etc.
+                if 'myanimelist' in site:
+                    ids['mal'] = str(ext_id)
+                elif 'anilist' in site:
+                    ids['anilist'] = str(ext_id)
         
         return ids
