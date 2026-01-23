@@ -4,6 +4,7 @@ File: scrapers/manga/kitsu_scraper.py
 """
 from typing import Dict, List, Any
 import sys
+import os
 from pathlib import Path
 
 # Add parent directory to path
@@ -15,9 +16,43 @@ class KitsuMangaScraper(BaseScraper):
     """Scraper for Kitsu API (manga)"""
     
     API_URL = "https://kitsu.io/api/edge/manga"
+    AUTH_URL = "https://kitsu.io/api/oauth/token"
     
     def __init__(self):
         super().__init__("kitsu", "manga")
+        self._authenticate()
+    
+    def _authenticate(self):
+        """Authenticate with Kitsu to access NSFW content"""
+        email = os.getenv("KITSU_EMAIL")
+        password = os.getenv("KITSU_PASSWORD")
+
+        if not email or not password:
+            print("  [WARN] KITSU_EMAIL or KITSU_PASSWORD not found. NSFW content will be hidden.")
+            return
+
+        try:
+            print("  Authenticating with Kitsu...")
+            response = self.session.post(
+                self.AUTH_URL,
+                json={
+                    "grant_type": "password",
+                    "username": email,
+                    "password": password
+                },
+                headers={"Content-Type": "application/json"}
+            )
+
+            if response.status_code == 200:
+                token = response.json().get("access_token")
+                self.session.headers.update({
+                    "Authorization": f"Bearer {token}"
+                })
+                print("  ✓ Authentication successful (NSFW content enabled)")
+            else:
+                print(f"  [!] Authentication failed (Status: {response.status_code}). Continuing as guest.")
+        except Exception as e:
+            print(f"  [!] Authentication error: {e}")
     
     def get_rate_limit(self) -> float:
         return 0.5  # 0.5 seconds between requests
@@ -57,8 +92,7 @@ class KitsuMangaScraper(BaseScraper):
                     print("  No more items found")
                     break
                 
-                nsfw_count = sum(1 for item in items if item.get('attributes', {}).get('nsfw'))
-                print(f"  Offset {offset} - {len(items)} items ({nsfw_count} NSFW)")
+                print(f"  Offset {offset} - {len(items)} items")
                 
                 for item in items:
                     try:
@@ -84,9 +118,6 @@ class KitsuMangaScraper(BaseScraper):
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
                     break
-        
-        total_nsfw = sum(1 for item in results if item.get('metadata', {}).get('nsfw'))
-        print(f"\n✓ Total items scraped: {len(results)} ({total_nsfw} NSFW)")
         
         return results
     
@@ -120,8 +151,7 @@ class KitsuMangaScraper(BaseScraper):
             "rating_rank": attrs.get('ratingRank'),
             "age_rating": attrs.get('ageRating'),
             "age_rating_guide": attrs.get('ageRatingGuide'),
-            "serialization": attrs.get('serialization'),
-            "nsfw": attrs.get('nsfw', False)
+            "serialization": attrs.get('serialization')
         }
         
         return self.format_item(kitsu_id, title, item_type, external_ids, metadata)
