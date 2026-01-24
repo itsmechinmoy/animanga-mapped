@@ -182,27 +182,32 @@ class AnimeMapper:
                 for service, service_id in id_map.items():
                     field_name = self.FIELD_MAP.get(service)
                     if field_name:
-                        # Special handling for anime-planet (string ID)
+                        # Special handling for anime-planet (keep as string)
                         if service == 'animeplanet' or service == 'anime-planet':
                             item[field_name] = str(service_id)
                         else:
-                            # Try to convert to int, fallback to string
+                            # STRICTLY enforce integers for all other IDs (AniDB, MAL, etc.)
                             try:
                                 item[field_name] = int(service_id)
                             except (ValueError, TypeError):
-                                item[field_name] = str(service_id)
+                                # If conversion fails, IGNORE the ID. 
+                                # Do NOT fallback to string, or sorting will crash.
+                                pass
                 
                 # Add season info if available
                 season = self.extract_season_info(id_map)
                 if season:
                     item['season'] = season
                 
-                final_list.append(item)
+                # Only add item if it has at least one valid ID (optional but good practice)
+                if any(k in item for k in self.FIELD_MAP.values()):
+                    final_list.append(item)
             
             except Exception as e:
                 print(f"  [WARN] Failed to merge {primary_key}: {e}")
         
         # Sort by AniDB ID if available
+        # Safe now because anidb_id is guaranteed to be int or None
         final_list.sort(key=lambda x: (
             x.get('anidb_id') is None,
             x.get('anidb_id', 999999999)
